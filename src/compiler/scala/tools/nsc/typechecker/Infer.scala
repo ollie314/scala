@@ -1117,7 +1117,7 @@ trait Infer extends Checkable {
 
     // this is quite nasty: it destructively changes the info of the syms of e.g., method type params
     // (see #3692, where the type param T's bounds were set to > : T <: T, so that parts looped)
-    // the changes are rolled back by restoreTypeBounds, but might be unintentially observed in the mean time
+    // the changes are rolled back by restoreTypeBounds, but might be unintentionally observed in the mean time
     def instantiateTypeVar(tvar: TypeVar) {
       val tparam                    = tvar.origin.typeSymbol
       val TypeBounds(lo0, hi0)      = tparam.info.bounds
@@ -1207,6 +1207,7 @@ trait Infer extends Checkable {
           }
         }
         tvars foreach instantiateTypeVar
+        invalidateTreeTpeCaches(tree0, tvars.map(_.origin.typeSymbol))
       }
       /* If the scrutinee has free type parameters but the pattern does not,
        * we have to flip the arguments so the expected type is treated as more
@@ -1375,7 +1376,7 @@ trait Infer extends Checkable {
      *  Otherwise, if there is no best alternative, error.
      *
      *  @param argtpes0 contains the argument types. If an argument is named, as
-     *    "a = 3", the corresponding type is `NamedType("a", Int)'. If the name
+     *    "a = 3", the corresponding type is `NamedType("a", Int)`. If the name
      *    of some NamedType does not exist in an alternative's parameter names,
      *    the type is replaces by `Unit`, i.e. the argument is treated as an
      *    assignment expression.

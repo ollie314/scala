@@ -106,7 +106,6 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.AnnotationInfo
     this.Annotation
     this.UnmappableAnnotation
-    this.ErroneousAnnotation
     this.ThrownException
     this.typeNames
     this.tpnme
@@ -370,6 +369,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.BridgeClass
     definitions.ElidableMethodClass
     definitions.ImplicitNotFoundClass
+    definitions.ImplicitAmbiguousClass
     definitions.MigrationAnnotationClass
     definitions.ScalaStrictFPAttr
     definitions.SwitchClass
@@ -444,7 +444,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.ScalaValueClassesNoUnit
     definitions.ScalaValueClasses
 
-
+    uncurry.DesugaredParameterType
     erasure.GenericArray
     erasure.scalaErasure
     erasure.specialScalaErasure

@@ -739,7 +739,7 @@ trait Types
      *
      * `SubstThisAndSymMap` performs a breadth-first map over this type, which meant that
      * symbol substitution occurred before `ThisType` substitution. Consequently, in substitution
-     * of a `SingleType(ThisType(`from`), sym), symbols were rebound to `from` rather than `to`.
+     * of a `SingleType(ThisType(from), sym)`, symbols were rebound to `from` rather than `to`.
      */
     def substThisAndSym(from: Symbol, to: Type, symsFrom: List[Symbol], symsTo: List[Symbol]): Type =
       if (symsFrom eq symsTo) substThis(from, to)
@@ -763,7 +763,7 @@ trait Types
     /** Apply `f` to each part of this type */
     def foreach(f: Type => Unit) { new ForEachTypeTraverser(f).traverse(this) }
 
-    /** Apply `pf' to each part of this type on which the function is defined */
+    /** Apply `pf` to each part of this type on which the function is defined */
     def collect[T](pf: PartialFunction[Type, T]): List[T] = new CollectTypeCollector(pf).collect(this)
 
     /** Apply `f` to each part of this type; children get mapped before their parents */
@@ -1214,6 +1214,10 @@ trait Types
 
     private[reflect] var underlyingCache: Type = NoType
     private[reflect] var underlyingPeriod = NoPeriod
+    private[Types] def invalidateSingleTypeCaches(): Unit = {
+      underlyingCache = NoType
+      underlyingPeriod = NoPeriod
+    }
     override def underlying: Type = {
       val cache = underlyingCache
       if (underlyingPeriod == currentPeriod && cache != null) cache
@@ -1354,6 +1358,12 @@ trait Types
     private[reflect] var baseTypeSeqPeriod = NoPeriod
     private[reflect] var baseClassesCache: List[Symbol] = _
     private[reflect] var baseClassesPeriod = NoPeriod
+    private[Types] def invalidatedCompoundTypeCaches() {
+      baseTypeSeqCache = null
+      baseTypeSeqPeriod = NoPeriod
+      baseClassesCache = null
+      baseClassesPeriod = NoPeriod
+    }
 
     override def baseTypeSeq: BaseTypeSeq = {
       val cached = baseTypeSeqCache
@@ -1912,6 +1922,9 @@ trait Types
 
       narrowedCache
     }
+    private[Types] def invalidateModuleTypeRefCaches(): Unit = {
+      narrowedCache = null
+    }
     override protected def finishPrefix(rest: String) = objectPrefix + rest
     override def directObjectString = super.safeToString
     override def toLongString = toString
@@ -1991,6 +2004,10 @@ trait Types
      */
     private var relativeInfoCache: Type = _
     private var relativeInfoPeriod: Period = NoPeriod
+    private[Types] def invalidateNonClassTypeRefCaches(): Unit = {
+      relativeInfoCache = NoType
+      relativeInfoPeriod = NoPeriod
+    }
 
     private[Types] def relativeInfo = /*trace(s"relativeInfo(${safeToString}})")*/{
       if (relativeInfoPeriod != currentPeriod) {
@@ -2059,7 +2076,7 @@ trait Types
     /** SI-3731, SI-8177: when prefix is changed to `newPre`, maintain consistency of prefix and sym
      *  (where the symbol refers to a declaration "embedded" in the prefix).
      *
-     *  @returns newSym so that `newPre` binds `sym.name` to `newSym`,
+     *  @return newSym so that `newPre` binds `sym.name` to `newSym`,
      *                  to remain consistent with `pre` previously binding `sym.name` to `sym`.
      *
      *  `newSym` and `sym` are conceptually the same symbols, but some change to our `prefix`
@@ -2123,6 +2140,10 @@ trait Types
       }
       thisInfoCache
     }
+    private[Types] def invalidateAbstractTypeRefCaches(): Unit = {
+      symInfoCache = null
+      thisInfoCache = null
+    }
     override def bounds   = thisInfo.bounds
     override protected[Types] def baseTypeSeqImpl: BaseTypeSeq = transform(bounds.hi).baseTypeSeq prepend this
     override def kind = "AbstractTypeRef"
@@ -2142,9 +2163,12 @@ trait Types
         trivial = fromBoolean(!sym.isTypeParameter && pre.isTrivial && areTrivialTypes(args))
       toBoolean(trivial)
     }
-    private[scala] def invalidateCaches(): Unit = {
+    private[Types] def invalidateTypeRefCaches(): Unit = {
+      parentsCache = null
       parentsPeriod = NoPeriod
+      baseTypeSeqCache = null
       baseTypeSeqPeriod = NoPeriod
+      normalized = null
     }
     private[reflect] var parentsCache: List[Type]      = _
     private[reflect] var parentsPeriod                 = NoPeriod
@@ -2523,6 +2547,9 @@ trait Types
     override def baseClasses: List[Symbol] = resultType.baseClasses
     override def baseType(clazz: Symbol): Type = resultType.baseType(clazz)
     override def narrow: Type = resultType.narrow
+
+    // SI-9475: PolyTypes with dependent method types are still dependent
+    override def isDependentMethodType = resultType.isDependentMethodType
 
     /** @M: typeDefSig wraps a TypeBounds in a PolyType
      *  to represent a higher-kinded type parameter
@@ -4565,6 +4592,39 @@ trait Types
   def objToAny(tp: Type): Type =
     if (!phase.erasedTypes && tp.typeSymbol == ObjectClass) AnyTpe
     else tp
+
+  def invalidateTreeTpeCaches(tree: Tree, updatedSyms: List[Symbol]) = if (updatedSyms.nonEmpty)
+    for (t <- tree if t.tpe != null)
+      for (tp <- t.tpe) {
+        invalidateCaches(tp, updatedSyms)
+      }
+
+  def invalidateCaches(t: Type, updatedSyms: List[Symbol]) = {
+    t match {
+      case st: SingleType if updatedSyms.contains(st.sym) => st.invalidateSingleTypeCaches()
+      case  _ =>
+    }
+    t match {
+      case tr: NonClassTypeRef if updatedSyms.contains(tr.sym) => tr.invalidateNonClassTypeRefCaches()
+      case _ =>
+    }
+    t match {
+      case tr: AbstractTypeRef if updatedSyms.contains(tr.sym) => tr.invalidateAbstractTypeRefCaches()
+      case _ =>
+    }
+    t match {
+      case tr: TypeRef if updatedSyms.contains(tr.sym) => tr.invalidateTypeRefCaches()
+      case _ =>
+    }
+    t match {
+      case tr: ModuleTypeRef if updatedSyms.contains(tr.sym) => tr.invalidateModuleTypeRefCaches()
+      case _ =>
+    }
+    t match {
+      case ct: CompoundType if ct.baseClasses.exists(updatedSyms.contains) => ct.invalidatedCompoundTypeCaches()
+      case _ =>
+    }
+  }
 
   val shorthands = Set(
     "scala.collection.immutable.List",

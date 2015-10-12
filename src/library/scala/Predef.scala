@@ -56,7 +56,7 @@ import scala.io.StdIn
  *  only contain natural numbers (i.e. non-negative), and that the result returned
  *  will also be natural. `require` is distinct from `assert` in that if the
  *  condition fails, then the caller of the function is to blame rather than a
- *  logical error having been made within `addNaturals` itself. `ensures` is a
+ *  logical error having been made within `addNaturals` itself. `ensuring` is a
  *  form of `assert` that declares the guarantee the function is providing with
  *  regards to its return value.
  *
@@ -268,13 +268,6 @@ object Predef extends LowPriorityImplicits with DeprecatedPredef {
      */
     @inline def formatted(fmtstr: String): String = fmtstr format self
   }
-
-  // TODO: remove, only needed for binary compatibility of 2.11.0-RC1 with 2.11.0-M8
-  // note that `private[scala]` becomes `public` in bytecode
-  private[scala] final class StringAdd[A](private val self: A) extends AnyVal {
-    def +(other: String): String = String.valueOf(self) + other
-  }
-  private[scala] def StringAdd(x: Any): Any = new StringAdd(x)
 
   // SI-8229 retaining the pre 2.11 name for source compatibility in shadowing this implicit
   implicit final class any2stringadd[A](private val self: A) extends AnyVal {

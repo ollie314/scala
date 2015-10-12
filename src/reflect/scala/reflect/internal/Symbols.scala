@@ -102,6 +102,9 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def isPrivateThis = (this hasFlag PRIVATE) && (this hasFlag LOCAL)
     def isProtectedThis = (this hasFlag PROTECTED) && (this hasFlag LOCAL)
 
+    def isJavaEnum: Boolean = hasJavaEnumFlag
+    def isJavaAnnotation: Boolean = hasJavaAnnotationFlag
+
     def newNestedSymbol(name: Name, pos: Position, newFlags: Long, isClass: Boolean): Symbol = name match {
       case n: TermName => newTermSymbol(n, pos, newFlags)
       case n: TypeName => if (isClass) newClassSymbol(n, pos, newFlags) else newNonClassSymbol(n, pos, newFlags)
@@ -495,9 +498,22 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *  failure to the point when that name is used for something, which is
      *  often to the point of never.
      */
-    def newStubSymbol(name: Name, missingMessage: String): Symbol = name match {
-      case n: TypeName  => new StubClassSymbol(this, n, missingMessage)
+    def newStubSymbol(name: Name, missingMessage: String, isPackage: Boolean = false): Symbol = name match {
+      case n: TypeName  => if (isPackage) new StubPackageClassSymbol(this, n, missingMessage) else new StubClassSymbol(this, n, missingMessage)
       case _            => new StubTermSymbol(this, name.toTermName, missingMessage)
+    }
+
+    /** Given a field, construct a term symbol that represents the source construct that gave rise the the field */
+    def sugaredSymbolOrSelf = {
+      val getter = getterIn(owner)
+      if (getter == NoSymbol) {
+        this
+      } else {
+        val result = owner.newValue(getter.name.toTermName, newFlags = getter.flags & ~Flags.METHOD).setPrivateWithin(getter.privateWithin).setInfo(getter.info.resultType)
+        val setter = setterIn(owner)
+        if (setter != NoSymbol) result.setFlag(Flags.MUTABLE)
+        result
+      }
     }
 
 // ----- locking and unlocking ------------------------------------------------------
@@ -732,7 +748,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     final def flags: Long = {
       if (Statistics.hotEnabled) Statistics.incCounter(flagsCount)
       val fs = _rawflags & phase.flagMask
-      (fs | ((fs & LateFlags) >>> LateShift)) & ~(fs >>> AntiShift)
+      (fs | ((fs & LateFlags) >>> LateShift)) & ~((fs & AntiFlags) >>> AntiShift)
     }
     def flags_=(fs: Long) = _rawflags = fs
     def rawflags_=(x: Long) { _rawflags = x }
@@ -881,10 +897,11 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     // string.  So this needs attention.  For now the fact that migration is
     // private[scala] ought to provide enough protection.
     def hasMigrationAnnotation = hasAnnotation(MigrationAnnotationClass)
-    def migrationMessage    = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(0) }
-    def migrationVersion    = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(1) }
-    def elisionLevel        = getAnnotation(ElidableMethodClass) flatMap { _.intArg(0) }
-    def implicitNotFoundMsg = getAnnotation(ImplicitNotFoundClass) flatMap { _.stringArg(0) }
+    def migrationMessage     = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(0) }
+    def migrationVersion     = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(1) }
+    def elisionLevel         = getAnnotation(ElidableMethodClass) flatMap { _.intArg(0) }
+    def implicitNotFoundMsg  = getAnnotation(ImplicitNotFoundClass) flatMap { _.stringArg(0) }
+    def implicitAmbiguousMsg = getAnnotation(ImplicitAmbiguousClass) flatMap { _.stringArg(0) }
 
     def isCompileTimeOnly       = hasAnnotation(CompileTimeOnlyAttr)
     def compileTimeOnlyMessage  = getAnnotation(CompileTimeOnlyAttr) flatMap (_ stringArg 0)
@@ -980,7 +997,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     private def isNotOverridden = (
       owner.isClass && (
            owner.isEffectivelyFinal
-        || owner.isSealed && owner.children.forall(c => c.isEffectivelyFinal && (overridingSymbol(c) == NoSymbol))
+        || (owner.isSealed && owner.sealedChildren.forall(c => c.isEffectivelyFinal && (overridingSymbol(c) == NoSymbol)))
       )
     )
 
@@ -992,6 +1009,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
              isPrivate
           || isLocalToBlock
          )
+      || isClass && originalOwner.isTerm && children.isEmpty // we track known subclasses of term-owned classes, use that infer finality
     )
     /** Is this symbol effectively final or a concrete term member of sealed class whose children do not override it */
     final def isEffectivelyFinalOrNotOverridden: Boolean = isEffectivelyFinal || (isTerm && !isDeferred && isNotOverridden)
@@ -1159,7 +1177,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *    phase check (if after flatten) in the (overridden) method "def owner" in
      *    ModuleSymbol / ClassSymbol. The `rawowner` field is not modified.
      *  - Owners are also changed in other situations, for example when moving trees into a new
-     *    lexical context, e.g. in the named/default arguments tranformation, or when translating
+     *    lexical context, e.g. in the named/default arguments transformation, or when translating
      *    extension method definitions.
      *
      * In general when seeking the owner of a symbol, one should call `owner`.
@@ -2119,7 +2137,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     /** The package class containing this symbol, or NoSymbol if there
      *  is not one.
      *  TODO: formulate as enclosingSuchThat, after making sure
-     *        we can start with current symbol rather than onwner.
+     *        we can start with current symbol rather than owner.
      *  TODO: Also harmonize with enclClass, enclMethod etc.
      */
     def enclosingPackageClass: Symbol = {
@@ -2495,14 +2513,15 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def associatedFile: AbstractFile = enclosingTopLevelClass.associatedFile
     def associatedFile_=(f: AbstractFile) { abort("associatedFile_= inapplicable for " + this) }
 
-    /** If this is a sealed class, its known direct subclasses.
+    /** If this is a sealed or local class, its known direct subclasses.
      *  Otherwise, the empty set.
      */
     def children: Set[Symbol] = Set()
+    final def sealedChildren: Set[Symbol] = if (!isSealed) Set.empty else children
 
     /** Recursively assemble all children of this symbol.
      */
-    def sealedDescendants: Set[Symbol] = children.flatMap(_.sealedDescendants) + this
+    final def sealedDescendants: Set[Symbol] = if (!isSealed) Set(this) else children.flatMap(_.sealedDescendants) + this
 
     @inline final def orElse(alt: => Symbol): Symbol = if (this ne NoSymbol) this else alt
     @inline final def andAlso(f: Symbol => Unit): Symbol = { if (this ne NoSymbol) f(this) ; this }
@@ -3471,6 +3490,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     override def companionSymbol = fail(NoSymbol)
   }
   class StubClassSymbol(owner0: Symbol, name0: TypeName, val missingMessage: String) extends ClassSymbol(owner0, owner0.pos, name0) with StubSymbol
+  class StubPackageClassSymbol(owner0: Symbol, name0: TypeName, val missingMessage: String) extends PackageClassSymbol(owner0, owner0.pos, name0) with StubSymbol
   class StubTermSymbol(owner0: Symbol, name0: TermName, val missingMessage: String) extends TermSymbol(owner0, owner0.pos, name0) with StubSymbol
 
   trait FreeSymbol extends Symbol {

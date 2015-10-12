@@ -140,7 +140,7 @@ trait ScalaSettings extends AbsScalaSettings
   // XML parsing options
   object XxmlSettings extends MultiChoiceEnumeration {
     val coalescing   = Choice("coalescing", "Convert PCData to Text and coalesce sibling nodes")
-    def isCoalescing = (Xxml contains coalescing) || (!isScala212 && !Xxml.isSetByUser)
+    def isCoalescing = Xxml contains coalescing
   }
   val Xxml = MultiChoiceSetting(
     name    = "-Xxml",
@@ -270,19 +270,20 @@ trait ScalaSettings extends AbsScalaSettings
   def YoptInlinerEnabled          = YoptInlineProject || YoptInlineGlobal
 
   def YoptBuildCallGraph          = YoptInlinerEnabled || YoptClosureElimination
-  def YoptAddToBytecodeRepository = YoptInlinerEnabled || YoptClosureElimination
+  def YoptAddToBytecodeRepository = YoptBuildCallGraph || YoptInlinerEnabled || YoptClosureElimination
 
   val YoptInlineHeuristics = ChoiceSetting(
     name = "-Yopt-inline-heuristics",
     helpArg = "strategy",
     descr = "Set the heuristics for inlining decisions.",
-    choices = List("at-inline-annotated", "everything"),
-    default = "at-inline-annotated")
+    choices = List("at-inline-annotated", "everything", "default"),
+    default = "default")
 
   object YoptWarningsChoices extends MultiChoiceEnumeration {
     val none                               = Choice("none"                       , "No optimizer warnings.")
     val atInlineFailedSummary              = Choice("at-inline-failed-summary"   , "One-line summary if there were @inline method calls that could not be inlined.")
     val atInlineFailed                     = Choice("at-inline-failed"           , "A detailed warning for each @inline method call that could not be inlined.")
+    val anyInlineFailed                    = Choice("any-inline-failed"          , "A detailed warning for every callsite that was chosen for inlining by the heuristics, but could not be inlined.")
     val noInlineMixed                      = Choice("no-inline-mixed"            , "In mixed compilation, warn at callsites methods defined in java sources (the inlining decision cannot be made without bytecode).")
     val noInlineMissingBytecode            = Choice("no-inline-missing-bytecode" , "Warn if an inlining decision cannot be made because a the bytecode of a class or member cannot be found on the compilation classpath.")
     val noInlineMissingScalaInlineInfoAttr = Choice("no-inline-missing-attribute", "Warn if an inlining decision cannot be made because a Scala classfile does not have a ScalaInlineInfo attribute.")
@@ -301,7 +302,8 @@ trait ScalaSettings extends AbsScalaSettings
   def YoptWarningEmitAtInlineFailed =
     !YoptWarnings.isSetByUser ||
       YoptWarnings.contains(YoptWarningsChoices.atInlineFailedSummary) ||
-      YoptWarnings.contains(YoptWarningsChoices.atInlineFailed)
+      YoptWarnings.contains(YoptWarningsChoices.atInlineFailed) ||
+      YoptWarnings.contains(YoptWarningsChoices.anyInlineFailed)
 
   def YoptWarningNoInlineMixed                      = YoptWarnings.contains(YoptWarningsChoices.noInlineMixed)
   def YoptWarningNoInlineMissingBytecode            = YoptWarnings.contains(YoptWarningsChoices.noInlineMissingBytecode)
@@ -362,8 +364,8 @@ trait ScalaSettings extends AbsScalaSettings
    */
   val YpresentationVerbose = BooleanSetting("-Ypresentation-verbose", "Print information about presentation compiler tasks.")
   val YpresentationDebug   = BooleanSetting("-Ypresentation-debug",  "Enable debugging output for the presentation compiler.")
-  val YpresentationStrict  = BooleanSetting("-Ypresentation-strict", "Do not report type errors in sources with syntax errors.")
-
+  val YpresentationAnyThread  = BooleanSetting("-Ypresentation-any-thread", "Allow use of the presentation compiler from any thread")
+  val YpresentationStrict     = BooleanSetting("-Ypresentation-strict", "Do not report type errors in sources with syntax errors.")
   val YpresentationLog     = StringSetting("-Ypresentation-log", "file", "Log presentation compiler events into file", "")
   val YpresentationReplay  = StringSetting("-Ypresentation-replay", "file", "Replay presentation compiler events from file", "")
   val YpresentationDelay   = IntSetting("-Ypresentation-delay", "Wait number of ms after typing before starting typechecking", 0, Some((0, 999)), str => Some(str.toInt))

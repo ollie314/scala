@@ -9,7 +9,6 @@ package backend
 package jvm
 
 import scala.collection.{ mutable, immutable }
-import scala.tools.nsc.backend.jvm.opt.ByteCodeRepository
 import scala.tools.nsc.symtab._
 
 import scala.tools.asm
@@ -67,8 +66,6 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
     var isCZParcelable             = false
     var isCZStaticModule           = false
     var isCZRemote                 = false
-
-    protected val indyLambdaHosts = collection.mutable.Set[Symbol]()
 
     /* ---------------- idiomatic way to ask questions to typer ---------------- */
 
@@ -128,10 +125,10 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
       val shouldAddLambdaDeserialize = (
         settings.target.value == "jvm-1.8"
           && settings.Ydelambdafy.value == "method"
-          && indyLambdaHosts.contains(claszSymbol))
+          && indyLambdaHosts.contains(cnode.name))
 
       if (shouldAddLambdaDeserialize)
-        addLambdaDeserialize(claszSymbol, cnode)
+        backendUtils.addLambdaDeserialize(cnode)
 
       addInnerClassesASM(cnode, innerClassBufferASM.toList)
 
@@ -139,11 +136,6 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
 
       if (AsmUtils.traceClassEnabled && cnode.name.contains(AsmUtils.traceClassPattern))
         AsmUtils.traceClass(cnode)
-
-      if (settings.YoptAddToBytecodeRepository) {
-        // The inliner needs to find all classes in the code repo, also those being compiled
-        byteCodeRepository.add(cnode, ByteCodeRepository.CompilationUnit)
-      }
 
       assert(cd.symbol == claszSymbol, "Someone messed up BCodePhase.claszSymbol during genPlainClass().")
     } // end of method genPlainClass()
@@ -153,9 +145,9 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
      */
     private def initJClass(jclass: asm.ClassVisitor) {
 
-      val ps = claszSymbol.info.parents
-      val superClass: String = if (ps.isEmpty) ObjectReference.internalName else internalName(ps.head.typeSymbol)
-      val interfaceNames = classBTypeFromSymbol(claszSymbol).info.get.interfaces map {
+      val bType = classBTypeFromSymbol(claszSymbol)
+      val superClass = bType.info.get.superClass.getOrElse(ObjectReference).internalName
+      val interfaceNames = bType.info.get.interfaces map {
         case classBType =>
           if (classBType.isNestedClass.get) { innerClassBufferASM += classBType }
           classBType.internalName
@@ -443,7 +435,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
      *        which rethrows the caught exception once it's done with the cleanup code.
      *
      *  A particular cleanup may in general contain LabelDefs. Care is needed when duplicating such jump-targets,
-     *  so as to preserve agreement wit the (also duplicated) jump-sources.
+     *  so as to preserve agreement with the (also duplicated) jump-sources.
      *  This is achieved based on the bookkeeping provided by two maps:
      *    - `labelDefsAtOrUnder` lists all LabelDefs enclosed by a given Tree node (the key)
      *    - `labelDef` provides the LabelDef node whose symbol is used as key.
@@ -587,10 +579,10 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
       }
 
       val isNative         = methSymbol.hasAnnotation(definitions.NativeAttr)
-      val isAbstractMethod = (methSymbol.isDeferred || methSymbol.owner.isInterface)
+      val isAbstractMethod = (methSymbol.isDeferred || methSymbol.owner.isInterface) && !methSymbol.hasFlag(Flags.JAVA_DEFAULTMETHOD)
       val flags = GenBCode.mkFlags(
         javaFlags(methSymbol),
-        if (claszSymbol.isInterface) asm.Opcodes.ACC_ABSTRACT   else 0,
+        if (isAbstractMethod)        asm.Opcodes.ACC_ABSTRACT   else 0,
         if (methSymbol.isStrictFP)   asm.Opcodes.ACC_STRICT     else 0,
         if (isNative)                asm.Opcodes.ACC_NATIVE     else 0  // native methods of objects are generated in mirror classes
       )

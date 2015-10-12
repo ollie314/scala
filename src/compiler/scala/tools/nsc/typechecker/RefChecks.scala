@@ -421,7 +421,7 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
             overrideError("cannot be used here - classes can only override abstract types")
           } else if (other.isEffectivelyFinal) { // (1.2)
             overrideError("cannot override final member")
-          } else if (!other.isDeferredOrDefault && !other.hasFlag(DEFAULTMETHOD) && !member.isAnyOverride && !member.isSynthetic) { // (*)
+          } else if (!other.isDeferredOrJavaDefault && !other.hasFlag(JAVA_DEFAULTMETHOD) && !member.isAnyOverride && !member.isSynthetic) { // (*)
             // (*) Synthetic exclusion for (at least) default getters, fixes SI-5178. We cannot assign the OVERRIDE flag to
             // the default getter: one default getter might sometimes override, sometimes not. Example in comment on ticket.
               if (isNeitherInClass && !(other.owner isSubClass member.owner))
@@ -604,7 +604,7 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
         def checkNoAbstractMembers(): Unit = {
           // Avoid spurious duplicates: first gather any missing members.
           def memberList = clazz.info.nonPrivateMembersAdmitting(VBRIDGE)
-          val (missing, rest) = memberList partition (m => m.isDeferredNotDefault && !ignoreDeferred(m))
+          val (missing, rest) = memberList partition (m => m.isDeferredNotJavaDefault && !ignoreDeferred(m))
           // Group missing members by the name of the underlying symbol,
           // to consolidate getters and setters.
           val grouped = missing groupBy (sym => analyzer.underlyingSymbol(sym).name)
@@ -1134,13 +1134,13 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
           t hasSymbolWhich (_.accessedOrSelf == valOrDef.symbol)
         case _ => false
       }
-      val trivialInifiniteLoop = (
+      val trivialInfiniteLoop = (
         !valOrDef.isErroneous
      && !valOrDef.symbol.isValueParameter
      && valOrDef.symbol.paramss.isEmpty
      && callsSelf
       )
-      if (trivialInifiniteLoop)
+      if (trivialInfiniteLoop)
         reporter.warning(valOrDef.rhs.pos, s"${valOrDef.symbol.fullLocationString} does nothing other than call itself recursively")
     }
 
@@ -1188,20 +1188,8 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
       // set NoType so it will be ignored.
       val cdef          = ClassDef(module.moduleClass, impl) setType NoType
 
-      // Create the module var unless the immediate owner is a class and
-      // the module var already exists there. See SI-5012, SI-6712.
-      def findOrCreateModuleVar() = {
-        val vsym = (
-          if (site.isTerm) NoSymbol
-          else site.info decl nme.moduleVarName(moduleName)
-        )
-        vsym orElse (site newModuleVarSymbol module)
-      }
       def newInnerObject() = {
-        // Create the module var unless it is already in the module owner's scope.
-        // The lookup is on module.enclClass and not module.owner lest there be a
-        // nullary method between us and the class; see SI-5012.
-        val moduleVar = findOrCreateModuleVar()
+        val moduleVar = site newModuleVarSymbol module
         val rhs       = gen.newModule(module, moduleVar.tpe)
         val body      = if (site.isTrait) rhs else gen.mkAssignAndReturn(moduleVar, rhs)
         val accessor  = DefDef(module, body.changeOwner(moduleVar -> module))
@@ -1217,6 +1205,7 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
       }
       val newTrees = cdef :: (
         if (module.isStatic)
+          // trait T { def f: Object }; object O extends T { object f }. Need to generate method f in O.
           if (module.isOverridingSymbol) matchingInnerObject() else Nil
         else
           newInnerObject()
@@ -1468,10 +1457,13 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
         case m: MemberDef =>
           val sym = m.symbol
           applyChecks(sym.annotations)
-          // validate implicitNotFoundMessage
-          analyzer.ImplicitNotFoundMsg.check(sym) foreach { warn =>
-            reporter.warning(tree.pos, f"Invalid implicitNotFound message for ${sym}%s${sym.locationString}%s:%n$warn")
-          }
+
+          def messageWarning(name: String)(warn: String) =
+            reporter.warning(tree.pos, f"Invalid $name message for ${sym}%s${sym.locationString}%s:%n$warn")
+
+          // validate implicitNotFoundMessage and implicitAmbiguousMessage
+          analyzer.ImplicitNotFoundMsg.check(sym) foreach messageWarning("implicitNotFound")
+          analyzer.ImplicitAmbiguousMsg.check(sym) foreach messageWarning("implicitAmbiguous")
 
         case tpt@TypeTree() =>
           if(tpt.original != null) {
@@ -1511,7 +1503,8 @@ abstract class RefChecks extends InfoTransform with scala.reflect.internal.trans
         sym.isSourceMethod &&
         sym.isCase &&
         sym.name == nme.apply &&
-        isClassTypeAccessible(tree)
+        isClassTypeAccessible(tree) &&
+        !tree.tpe.resultType.typeSymbol.primaryConstructor.isLessAccessibleThan(tree.symbol)
 
       if (doTransform) {
         tree foreach {

@@ -233,6 +233,8 @@ trait Definitions extends api.StandardDefinitions {
       || tp =:= AnyRefTpe
     )
 
+    def isUnitType(tp: Type) = tp.typeSymbol == UnitClass && tp.annotations.isEmpty
+
     def hasMultipleNonImplicitParamLists(member: Symbol): Boolean = hasMultipleNonImplicitParamLists(member.info)
     def hasMultipleNonImplicitParamLists(info: Type): Boolean = info match {
       case PolyType(_, restpe)                                   => hasMultipleNonImplicitParamLists(restpe)
@@ -795,7 +797,9 @@ trait Definitions extends api.StandardDefinitions {
      * The class defining the method is a supertype of `tp` that
      * has a public no-arg primary constructor.
      */
-    def samOf(tp: Type): Symbol = if (!settings.Xexperimental) NoSymbol else {
+    def samOf(tp: Type): Symbol = if (!settings.Xexperimental) NoSymbol else findSam(tp)
+
+    def findSam(tp: Type): Symbol = {
       // if tp has a constructor, it must be public and must not take any arguments
       // (not even an implicit argument list -- to keep it simple for now)
       val tpSym  = tp.typeSymbol
@@ -815,7 +819,7 @@ trait Definitions extends api.StandardDefinitions {
         // must filter out "universal" members (getClass is deferred for some reason)
         val deferredMembers = (
           tp membersBasedOnFlags (excludedFlags = BridgeAndPrivateFlags, requiredFlags = METHOD)
-          filter (mem => mem.isDeferredNotDefault && !isUniversalMember(mem)) // TODO: test
+          filter (mem => mem.isDeferredNotJavaDefault && !isUniversalMember(mem)) // TODO: test
         )
 
         // if there is only one, it's monomorphic and has a single argument list
@@ -1103,6 +1107,7 @@ trait Definitions extends api.StandardDefinitions {
     lazy val BridgeClass                = requiredClass[scala.annotation.bridge]
     lazy val ElidableMethodClass        = requiredClass[scala.annotation.elidable]
     lazy val ImplicitNotFoundClass      = requiredClass[scala.annotation.implicitNotFound]
+    lazy val ImplicitAmbiguousClass     = getClassIfDefined("scala.annotation.implicitAmbiguous")
     lazy val MigrationAnnotationClass   = requiredClass[scala.annotation.migration]
     lazy val ScalaStrictFPAttr          = requiredClass[scala.annotation.strictfp]
     lazy val SwitchClass                = requiredClass[scala.annotation.switch]

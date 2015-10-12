@@ -50,7 +50,7 @@
  *     https://groups.google.com/d/topic/scala-internals/gp5JsM1E0Fo/discussion
  */
 
-val bootstrapScalaVersion = "2.11.5"
+val bootstrapScalaVersion = versionProps("starr.version")
 
 def withoutScalaLang(moduleId: ModuleID): ModuleID = moduleId exclude("org.scala-lang", "*")
 
@@ -64,11 +64,11 @@ val junitIntefaceDep = "com.novocode" % "junit-interface" % "0.11" % "test"
 val asmDep = "org.scala-lang.modules" % "scala-asm" % versionProps("scala-asm.version")
 val jlineDep = "jline" % "jline" % versionProps("jline.version")
 val antDep = "org.apache.ant" % "ant" % "1.9.4"
-val scalacheckDep = withoutScalaLang("org.scalacheck" %% "scalacheck" % "1.11.4")
+val scalacheckDep = withoutScalaLang("org.scalacheck" %% "scalacheck" % versionNumber("scalacheck") % "it")
 
 lazy val commonSettings = clearSourceAndResourceDirectories ++ Seq[Setting[_]](
   organization := "org.scala-lang",
-  version := "2.11.6-SNAPSHOT",
+  version := "2.11.8-SNAPSHOT",
   scalaVersion := bootstrapScalaVersion,
   // we don't cross build Scala itself
   crossPaths := false,
@@ -131,7 +131,7 @@ lazy val setJarLocation: Setting[_] =
 lazy val scalaSubprojectSettings: Seq[Setting[_]] = commonSettings :+ setJarLocation
 
 lazy val generatePropertiesFileSettings = Seq[Setting[_]](
-  copyrightString := "Copyright 2002-2013, LAMP/EPFL",
+  copyrightString := "Copyright 2002-2015, LAMP/EPFL",
   resourceGenerators in Compile += generateVersionPropertiesFile.map(file => Seq(file)).taskValue,
   generateVersionPropertiesFile := generateVersionPropertiesFileImpl.value
 )
@@ -156,7 +156,6 @@ lazy val library = configureAsSubproject(project)
       Seq("-doc-no-compile", libraryAuxDir.toString)
     },
     includeFilter in unmanagedResources in Compile := libIncludes)
-  .dependsOn (forkjoin)
 
 lazy val reflect = configureAsSubproject(project)
   .settings(generatePropertiesFileSettings: _*)
@@ -201,7 +200,7 @@ lazy val repl = configureAsSubproject(project)
     run <<= (run in Compile).partialInput(" -usejavacp") // Automatically add this so that `repl/run` works without additional arguments.
   )
   .settings(disableDocsAndPublishingTasks: _*)
-  .dependsOn(compiler)
+  .dependsOn(compiler, interactive)
 
 lazy val scaladoc = configureAsSubproject(project)
   .settings(
@@ -212,8 +211,6 @@ lazy val scaladoc = configureAsSubproject(project)
 
 lazy val scalap = configureAsSubproject(project).
   dependsOn(compiler)
-
-lazy val forkjoin = configureAsForkOfJavaProject(project)
 
 lazy val partestExtras = configureAsSubproject(Project("partest-extras", file(".") / "src" / "partest-extras"))
   .dependsOn(repl)
@@ -283,7 +280,7 @@ lazy val test = project.
   )
 
 lazy val root = (project in file(".")).
-  aggregate(library, forkjoin, reflect, compiler, interactive, repl,
+  aggregate(library, reflect, compiler, interactive, repl,
     scaladoc, scalap, partestExtras, junit).settings(
     sources in Compile := Seq.empty,
     onLoadMessage := """|*** Welcome to the sbt build definition for Scala! ***
@@ -312,27 +309,6 @@ def configureAsSubproject(project: Project): Project = {
   (project in base).settings(scalaSubprojectSettings: _*)
 }
 
-/**
- * Configuration for subprojects that are forks of some Java projects
- * we depend on. At the moment there's just forkjoin.
- *
- * We do not publish artifacts for those projects but we package their
- * binaries in a jar of other project (compiler or library).
- *
- * For that reason we disable docs generation, packaging and publishing.
- */
-def configureAsForkOfJavaProject(project: Project): Project = {
-  val base = file(".") / "src" / project.id
-  (project in base).
-    settings(commonSettings: _*).
-    settings(disableDocsAndPublishingTasks: _*).
-    settings(
-      sourceDirectory in Compile := baseDirectory.value,
-      javaSource in Compile := (sourceDirectory in Compile).value,
-      sources in Compile in doc := Seq.empty,
-      classDirectory in Compile := buildDirectory.value / "libs/classes" / thisProject.value.id
-    )
-}
 
 lazy val buildDirectory = settingKey[File]("The directory where all build products go. By default ./build")
 lazy val copyrightString = settingKey[String]("Copyright string.")

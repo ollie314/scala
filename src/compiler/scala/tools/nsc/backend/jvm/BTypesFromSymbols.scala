@@ -7,8 +7,9 @@ package scala.tools.nsc
 package backend.jvm
 
 import scala.tools.asm
+import scala.tools.nsc.backend.jvm.analysis.BackendUtils
 import scala.tools.nsc.backend.jvm.opt._
-import scala.tools.nsc.backend.jvm.BTypes.{InlineInfo, MethodInlineInfo, InternalName}
+import scala.tools.nsc.backend.jvm.BTypes._
 import BackendReporting._
 import scala.tools.nsc.settings.ScalaSettings
 
@@ -32,15 +33,19 @@ class BTypesFromSymbols[G <: Global](val global: G) extends BTypes {
   val bCodeAsmCommon: BCodeAsmCommon[global.type] = new BCodeAsmCommon(global)
   import bCodeAsmCommon._
 
+  val backendUtils: BackendUtils[this.type] = new BackendUtils(this)
+
   // Why the proxy, see documentation of class [[CoreBTypes]].
   val coreBTypes = new CoreBTypesProxy[this.type](this)
   import coreBTypes._
 
-  val byteCodeRepository = new ByteCodeRepository(global.classPath, javaDefinedClasses, recordPerRunCache(collection.concurrent.TrieMap.empty))
+  val byteCodeRepository: ByteCodeRepository[this.type] = new ByteCodeRepository(global.classPath, this)
 
   val localOpt: LocalOpt[this.type] = new LocalOpt(this)
 
   val inliner: Inliner[this.type] = new Inliner(this)
+
+  val inlinerHeuristics: InlinerHeuristics[this.type] = new InlinerHeuristics(this)
 
   val closureOptimizer: ClosureOptimizer[this.type] = new ClosureOptimizer(this)
 
@@ -216,7 +221,18 @@ class BTypesFromSymbols[G <: Global](val global: G) extends BTypes {
   }
 
   private def setClassInfo(classSym: Symbol, classBType: ClassBType): ClassBType = {
-    val superClassSym = if (classSym.isImplClass) ObjectClass else classSym.superClass
+    // Check for isImplClass: trait implementation classes have NoSymbol as superClass
+    // Check for hasAnnotationFlag for SI-9393: the classfile / java source parsers add
+    // scala.annotation.Annotation as superclass to java annotations. In reality, java
+    // annotation classfiles have superclass Object (like any interface classfile).
+    val superClassSym = if (classSym.isImplClass || classSym.hasJavaAnnotationFlag) ObjectClass else {
+      val sc = classSym.superClass
+      // SI-9393: Java annotation classes don't have the ABSTRACT/INTERFACE flag, so they appear
+      // (wrongly) as superclasses. Fix this for BTypes: the java annotation will appear as interface
+      // (handled by method implementedInterfaces), the superclass is set to Object.
+      if (sc.hasJavaAnnotationFlag) ObjectClass
+      else sc
+    }
     assert(
       if (classSym == ObjectClass)
         superClassSym == NoSymbol
@@ -433,7 +449,7 @@ class BTypesFromSymbols[G <: Global](val global: G) extends BTypes {
         case Right(classNode) =>
           inlineInfoFromClassfile(classNode)
         case Left(missingClass) =>
-          InlineInfo(None, false, Map.empty, Some(ClassNotFoundWhenBuildingInlineInfoFromSymbol(missingClass)))
+          EmptyInlineInfo.copy(warning = Some(ClassNotFoundWhenBuildingInlineInfoFromSymbol(missingClass)))
       }
     }
   }
@@ -456,7 +472,7 @@ class BTypesFromSymbols[G <: Global](val global: G) extends BTypes {
         flags = asm.Opcodes.ACC_SUPER | asm.Opcodes.ACC_PUBLIC | asm.Opcodes.ACC_FINAL,
         nestedClasses = nested,
         nestedInfo = None,
-        InlineInfo(None, true, Map.empty, None))) // no InlineInfo needed, scala never invokes methods on the mirror class
+        inlineInfo = EmptyInlineInfo.copy(isEffectivelyFinal = true))) // no method inline infos needed, scala never invokes methods on the mirror class
       c
     })
   }
@@ -560,14 +576,14 @@ class BTypesFromSymbols[G <: Global](val global: G) extends BTypes {
     import asm.Opcodes._
     GenBCode.mkFlags(
       if (privateFlag) ACC_PRIVATE else ACC_PUBLIC,
-      if (sym.isDeferred || sym.hasAbstractFlag) ACC_ABSTRACT else 0,
+      if ((sym.isDeferred && !sym.hasFlag(symtab.Flags.JAVA_DEFAULTMETHOD))|| sym.hasAbstractFlag) ACC_ABSTRACT else 0,
       if (sym.isInterface) ACC_INTERFACE else 0,
       if (finalFlag && !sym.hasAbstractFlag) ACC_FINAL else 0,
       if (sym.isStaticMember) ACC_STATIC else 0,
       if (sym.isBridge) ACC_BRIDGE | ACC_SYNTHETIC else 0,
       if (sym.isArtifact) ACC_SYNTHETIC else 0,
       if (sym.isClass && !sym.isInterface) ACC_SUPER else 0,
-      if (sym.hasEnumFlag) ACC_ENUM else 0,
+      if (sym.hasJavaEnumFlag) ACC_ENUM else 0,
       if (sym.isVarargsMethod) ACC_VARARGS else 0,
       if (sym.hasFlag(symtab.Flags.SYNCHRONIZED)) ACC_SYNCHRONIZED else 0,
       if (sym.isDeprecated) asm.Opcodes.ACC_DEPRECATED else 0
