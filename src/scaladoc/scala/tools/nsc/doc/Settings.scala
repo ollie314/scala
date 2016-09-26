@@ -14,18 +14,21 @@ import scala.language.postfixOps
   * @param printMsg A function that prints the string, without any extra boilerplate of error */
 class Settings(error: String => Unit, val printMsg: String => Unit = println(_)) extends scala.tools.nsc.Settings(error) {
 
+  // TODO 2.13 Remove
+  private def removalIn213 = "This flag is scheduled for removal in 2.13. If you have a case where you need this flag then please report a bug."
+
   /** A setting that defines in which format the documentation is output. ''Note:'' this setting is currently always
     * `html`. */
   val docformat = ChoiceSetting (
     "-doc-format",
     "format",
-    "Selects in which format documentation is rendered",
+    "Selects in which format documentation is rendered.",
     List("html"),
     "html"
   )
 
   /** A setting that defines the overall title of the documentation, typically the name of the library being
-    * documented. ''Note:'' This setting is currently not used. */
+    * documented. */
   val doctitle = StringSetting (
     "-doc-title",
     "title",
@@ -34,7 +37,7 @@ class Settings(error: String => Unit, val printMsg: String => Unit = println(_))
   )
 
   /** A setting that defines the overall version number of the documentation, typically the version of the library being
-    * documented. ''Note:'' This setting is currently not used. */
+    * documented. */
   val docversion = StringSetting (
     "-doc-version",
     "version",
@@ -45,7 +48,7 @@ class Settings(error: String => Unit, val printMsg: String => Unit = println(_))
   val docfooter = StringSetting (
     "-doc-footer",
     "footer",
-    "A footer on every ScalaDoc page, by default the EPFL/Typesafe copyright notice. Can be overridden with a custom footer.",
+    "A footer on every Scaladoc page, by default the EPFL/Lightbend copyright notice. Can be overridden with a custom footer.",
     ""
   )
 
@@ -199,25 +202,32 @@ class Settings(error: String => Unit, val printMsg: String => Unit = println(_))
     ""
   )
 
+  // TODO 2.13 Remove
   val docExpandAllTypes = BooleanSetting (
     "-expand-all-types",
     "Expand all type aliases and abstract types into full template pages. (locally this can be done with the @template annotation)"
-  )
+  ) withDeprecationMessage(removalIn213)
 
   val docGroups = BooleanSetting (
     "-groups",
     "Group similar functions together (based on the @group annotation)"
   )
 
+  val docNoJavaComments = BooleanSetting (
+    "-no-java-comments",
+    "Prevents parsing and inclusion of comments from java sources."
+  )
+
   // For improved help output.
   def scaladocSpecific = Set[Settings#Setting](
     docformat, doctitle, docfooter, docversion, docUncompilable, docsourceurl, docgenerator, docRootContent, useStupidTypes,
+    docExternalDoc,
     docAuthor, docDiagrams, docDiagramsDebug, docDiagramsDotPath,
     docDiagramsDotTimeout, docDiagramsDotRestart,
-    docImplicits, docImplicitsDebug, docImplicitsShowAll, docImplicitsHide,
+    docImplicits, docImplicitsDebug, docImplicitsShowAll, docImplicitsHide, docImplicitsSoundShadowing,
     docDiagramsMaxNormalClasses, docDiagramsMaxImplicitClasses,
     docNoPrefixes, docNoLinkWarnings, docRawOutput, docSkipPackages,
-    docExpandAllTypes, docGroups
+    docExpandAllTypes, docGroups, docNoJavaComments
   )
   val isScaladocSpecific: String => Boolean = scaladocSpecific map (_.name)
 
@@ -275,24 +285,36 @@ class Settings(error: String => Unit, val printMsg: String => Unit = println(_))
       ("scala.reflect.ClassManifest"            -> ((tparam: String) => tparam + " is accompanied by a ClassManifest, which is a runtime representation of its type that survives erasure")) +
       ("scala.reflect.OptManifest"              -> ((tparam: String) => tparam + " is accompanied by an OptManifest, which can be either a runtime representation of its type or the NoManifest, which means the runtime type is not available")) +
       ("scala.reflect.ClassTag"                 -> ((tparam: String) => tparam + " is accompanied by a ClassTag, which is a runtime representation of its type that survives erasure")) +
-      ("scala.reflect.api.TypeTags.WeakTypeTag" -> ((tparam: String) => tparam + " is accompanied by an WeakTypeTag, which is a runtime representation of its type that survives erasure")) +
+      ("scala.reflect.api.TypeTags.WeakTypeTag" -> ((tparam: String) => tparam + " is accompanied by a WeakTypeTag, which is a runtime representation of its type that survives erasure")) +
       ("scala.reflect.api.TypeTags.TypeTag"     -> ((tparam: String) => tparam + " is accompanied by a TypeTag, which is a runtime representation of its type that survives erasure"))
+
+    private val excludedClassnamePatterns = Set(
+      """^scala.Tuple.*""",
+      """^scala.Product.*""",
+      """^scala.Function.*""",
+      """^scala.runtime.AbstractFunction.*"""
+    ) map (_.r)
+
+    private val notExcludedClasses = Set(
+      "scala.Tuple1",
+      "scala.Tuple2",
+      "scala.Product",
+      "scala.Product1",
+      "scala.Product2",
+      "scala.Function",
+      "scala.Function1",
+      "scala.Function2",
+      "scala.runtime.AbstractFunction0",
+      "scala.runtime.AbstractFunction1",
+      "scala.runtime.AbstractFunction2"
+    )
 
     /**
      * Set of classes to exclude from index and diagrams
      * TODO: Should be configurable
      */
     def isExcluded(qname: String) = {
-      ( ( qname.startsWith("scala.Tuple") || qname.startsWith("scala.Product") ||
-         qname.startsWith("scala.Function") || qname.startsWith("scala.runtime.AbstractFunction")
-       ) && !(
-        qname == "scala.Tuple1" || qname == "scala.Tuple2" ||
-        qname == "scala.Product" || qname == "scala.Product1" || qname == "scala.Product2" ||
-        qname == "scala.Function" || qname == "scala.Function1" || qname == "scala.Function2" ||
-        qname == "scala.runtime.AbstractFunction0" || qname == "scala.runtime.AbstractFunction1" ||
-        qname == "scala.runtime.AbstractFunction2"
-      )
-     )
+      excludedClassnamePatterns.exists(_.findFirstMatchIn(qname).isDefined) && !notExcludedClasses(qname)
     }
 
     /** Common conversion targets that affect any class in Scala */
@@ -302,30 +324,6 @@ class Settings(error: String => Unit, val printMsg: String => Unit = println(_))
       "scala.Predef.ArrowAssoc",
       "scala.Predef.Ensuring",
       "scala.collection.TraversableOnce.alternateImplicit")
-
-    /** There's a reason all these are specialized by hand but documenting each of them is beyond the point */
-    val arraySkipConversions = List(
-      "scala.Predef.refArrayOps",
-      "scala.Predef.intArrayOps",
-      "scala.Predef.doubleArrayOps",
-      "scala.Predef.longArrayOps",
-      "scala.Predef.floatArrayOps",
-      "scala.Predef.charArrayOps",
-      "scala.Predef.byteArrayOps",
-      "scala.Predef.shortArrayOps",
-      "scala.Predef.booleanArrayOps",
-      "scala.Predef.unitArrayOps",
-      "scala.LowPriorityImplicits.wrapRefArray",
-      "scala.LowPriorityImplicits.wrapIntArray",
-      "scala.LowPriorityImplicits.wrapDoubleArray",
-      "scala.LowPriorityImplicits.wrapLongArray",
-      "scala.LowPriorityImplicits.wrapFloatArray",
-      "scala.LowPriorityImplicits.wrapCharArray",
-      "scala.LowPriorityImplicits.wrapByteArray",
-      "scala.LowPriorityImplicits.wrapShortArray",
-      "scala.LowPriorityImplicits.wrapBooleanArray",
-      "scala.LowPriorityImplicits.wrapUnitArray",
-      "scala.LowPriorityImplicits.genericWrapArray")
 
     // included as names as here we don't have access to a Global with Definitions :(
     def valueClassList = List("unit", "boolean", "byte", "short", "char", "int", "long", "float", "double")

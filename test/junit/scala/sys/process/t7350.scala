@@ -1,4 +1,3 @@
-
 package scala.sys.process
 
 import org.junit.runner.RunWith
@@ -18,6 +17,7 @@ import scala.util.control.Exception.ignoring
 class PipedProcessTest {
   class ProcessMock(error: Boolean) extends Process {
     var destroyCount = 0
+    def isAlive() = false
     def exitValue(): Int = {
       if (error) {
         throw new InterruptedException()

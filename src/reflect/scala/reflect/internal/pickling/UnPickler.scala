@@ -14,7 +14,7 @@ import java.lang.Double.longBitsToDouble
 
 import Flags._
 import PickleFormat._
-import scala.collection.{ mutable, immutable }
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.annotation.switch
 
@@ -227,9 +227,7 @@ abstract class UnPickler {
             return NoSymbol
 
           if (tag == EXTMODCLASSref) {
-            val moduleVar = owner.info.decl(nme.moduleVarName(name.toTermName))
-            if (moduleVar.isLazyAccessor)
-              return moduleVar.lazyAccessor.lazyAccessor
+            owner.info.decl(nme.moduleVarName(name.toTermName))
           }
           NoSymbol
         }

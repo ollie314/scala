@@ -9,6 +9,8 @@
 package scala
 package collection.parallel
 
+import scala.language.{ higherKinds, implicitConversions }
+
 import scala.collection.mutable.Builder
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.IterableLike
@@ -21,13 +23,9 @@ import scala.collection.GenIterable
 import scala.collection.GenTraversableOnce
 import scala.collection.GenTraversable
 import immutable.HashMapCombiner
-import scala.reflect.{ClassTag, classTag}
-
-import java.util.concurrent.atomic.AtomicBoolean
+import scala.reflect.ClassTag
 
 import scala.annotation.unchecked.uncheckedVariance
-import scala.annotation.unchecked.uncheckedStable
-import scala.language.{ higherKinds, implicitConversions }
 
 import scala.collection.parallel.ParallelCollectionImplicits._
 
@@ -520,22 +518,22 @@ self: ParIterableLike[T, Repr, Sequential] =>
    *
    *  $abortsignalling
    *
-   *  @param pred    a predicate used to test elements
+   *  @param p       a predicate used to test elements
    *  @return        true if `p` holds for all elements, false otherwise
    */
-  def forall(pred: T => Boolean): Boolean = {
-    tasksupport.executeAndWaitResult(new Forall(pred, splitter assign new DefaultSignalling with VolatileAbort))
+  def forall(@deprecatedName('pred) p: T => Boolean): Boolean = {
+    tasksupport.executeAndWaitResult(new Forall(p, splitter assign new DefaultSignalling with VolatileAbort))
   }
 
   /** Tests whether a predicate holds for some element of this $coll.
    *
    *  $abortsignalling
    *
-   *  @param pred    a predicate used to test elements
+   *  @param p       a predicate used to test elements
    *  @return        true if `p` holds for some element, false otherwise
    */
-  def exists(pred: T => Boolean): Boolean = {
-    tasksupport.executeAndWaitResult(new Exists(pred, splitter assign new DefaultSignalling with VolatileAbort))
+  def exists(@deprecatedName('pred) p: T => Boolean): Boolean = {
+    tasksupport.executeAndWaitResult(new Exists(p, splitter assign new DefaultSignalling with VolatileAbort))
   }
 
   /** Finds some element in the collection for which the predicate holds, if such
@@ -546,11 +544,11 @@ self: ParIterableLike[T, Repr, Sequential] =>
    *
    *  $abortsignalling
    *
-   *  @param pred     predicate used to test the elements
+   *  @param p        predicate used to test the elements
    *  @return         an option value with the element if such an element exists, or `None` otherwise
    */
-  def find(pred: T => Boolean): Option[T] = {
-    tasksupport.executeAndWaitResult(new Find(pred, splitter assign new DefaultSignalling with VolatileAbort))
+  def find(@deprecatedName('pred) p: T => Boolean): Option[T] = {
+    tasksupport.executeAndWaitResult(new Find(p, splitter assign new DefaultSignalling with VolatileAbort))
   }
 
   /** Creates a combiner factory. Each combiner factory instance is used
@@ -844,7 +842,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
     tasksupport.executeAndWaitResult(new ToParMap(combinerFactory(cbf), splitter)(ev) mapResult { _.resultWithTaskSupport })
   }
 
-  @deprecated("Use .seq.view instead", "2.11.0")
+  @deprecated("use .seq.view instead", "2.11.0")
   def view = seq.view
 
   override def toArray[U >: T: ClassTag]: Array[U] = {
@@ -1284,7 +1282,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
   extends Transformer[Combiner[(U, S), That], Zip[U, S, That]] {
     @volatile var result: Result = null
     def leaf(prev: Option[Result]) = result = pit.zip2combiner[U, S, That](othpit, pbf())
-    protected[this] def newSubtask(p: IterableSplitter[T]) = unsupported
+    protected[this] def newSubtask(p: IterableSplitter[T]) = throw new UnsupportedOperationException
     override def split = {
       val pits = pit.splitWithSignalling
       val sizes = pits.map(_.remaining)
@@ -1300,7 +1298,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
   extends Transformer[Combiner[(U, S), That], ZipAll[U, S, That]] {
     @volatile var result: Result = null
     def leaf(prev: Option[Result]) = result = pit.zipAll2combiner[U, S, That](othpit, thiselem, thatelem, pbf())
-    protected[this] def newSubtask(p: IterableSplitter[T]) = unsupported
+    protected[this] def newSubtask(p: IterableSplitter[T]) = throw new UnsupportedOperationException
     override def split = if (pit.remaining <= len) {
       val pits = pit.splitWithSignalling
       val sizes = pits.map(_.remaining)
@@ -1322,7 +1320,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
   extends Accessor[Unit, CopyToArray[U, This]] {
     @volatile var result: Unit = ()
     def leaf(prev: Option[Unit]) = pit.copyToArray(array, from, len)
-    protected[this] def newSubtask(p: IterableSplitter[T]) = unsupported
+    protected[this] def newSubtask(p: IterableSplitter[T]) = throw new UnsupportedOperationException
     override def split = {
       val pits = pit.splitWithSignalling
       for ((p, untilp) <- pits zip pits.scanLeft(0)(_ + _.remaining); if untilp < len) yield {
@@ -1379,7 +1377,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
       val half = howmany / 2
       ScanNode(mergeTrees(trees, from, half), mergeTrees(trees, from + half, howmany - half))
     } else trees(from)
-    protected[this] def newSubtask(pit: IterableSplitter[T]) = unsupported
+    protected[this] def newSubtask(pit: IterableSplitter[T]) = throw new UnsupportedOperationException
     override def split = {
       val pits = pit.splitWithSignalling
       for ((p, untilp) <- pits zip pits.scanLeft(from)(_ + _.remaining)) yield {
@@ -1416,7 +1414,7 @@ self: ParIterableLike[T, Repr, Sequential] =>
         new FromScanTree(left, z, op, cbf),
         new FromScanTree(right, z, op, cbf)
       )
-      case _ => unsupportedop("Cannot be split further")
+      case _ => throw new UnsupportedOperationException("Cannot be split further")
     }
     def shouldSplitFurther = tree match {
       case ScanNode(_, _) => true
@@ -1499,5 +1497,4 @@ self: ParIterableLike[T, Repr, Sequential] =>
       append(s)
     }
   })
-
 }

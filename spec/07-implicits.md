@@ -44,7 +44,7 @@ object Monoids {
 
 ## Implicit Parameters
 
-An implicit parameter list
+An _implicit parameter list_
 `(implicit $p_1$,$\ldots$,$p_n$)` of a method marks the parameters $p_1 , \ldots , p_n$ as
 implicit. A method or constructor can have only one implicit parameter
 list, and it must be the last parameter list given.
@@ -357,8 +357,16 @@ they appear and all the resulting evidence parameters are concatenated
 in one implicit parameter section.  Since traits do not take
 constructor parameters, this translation does not work for them.
 Consequently, type-parameters in traits may not be view- or context-bounded.
-Also, a method or class with view- or context bounds may not define any
-additional implicit parameters.
+
+Evidence parameters are prepended to the existing implicit parameter section, if one exists.
+
+For example:
+
+```scala
+def foo[A: M](implicit b: B): C
+// expands to:
+// def foo[A](implicit evidence$1: M[A], b: B): C
+```
 
 ###### Example
 The `<=` method from the [`Ordered` example](#example-ordered) can be declared

@@ -11,7 +11,7 @@ package collection
 package immutable
 
 import generic._
-import mutable.{Builder, StringBuilder, LazyBuilder, ListBuffer}
+import mutable.{Builder, StringBuilder, LazyBuilder}
 import scala.annotation.tailrec
 import Stream.cons
 import scala.language.implicitConversions
@@ -176,9 +176,9 @@ import scala.language.implicitConversions
  *    loop(1, 1)
  *  }
  *  }}}
- * 
+ *
  *  Note that `mkString` forces evaluation of a `Stream`, but `addString` does
- *  not.  In both cases, a `Stream` that is or ends in a cycle 
+ *  not.  In both cases, a `Stream` that is or ends in a cycle
  *  (e.g. `lazy val s: Stream[Int] = 0 #:: s`) will convert additional trips
  *  through the cycle to `...`.  Additionally, `addString` will display an
  *  un-memoized tail as `?`.
@@ -198,16 +198,13 @@ import scala.language.implicitConversions
  *  @define orderDependentFold
  *  @define willTerminateInf Note: lazily evaluated; will terminate for infinite-sized collections.
  */
-@deprecatedInheritance("This class will be sealed.", "2.11.0")
-abstract class Stream[+A] extends AbstractSeq[A]
+sealed abstract class Stream[+A] extends AbstractSeq[A]
                              with LinearSeq[A]
                              with GenericTraversableTemplate[A, Stream]
                              with LinearSeqOptimized[A, Stream[A]]
-                             with Serializable {
-self =>
-  override def companion: GenericCompanion[Stream] = Stream
+                             with Serializable { self =>
 
-  import scala.collection.{Traversable, Iterable, Seq, IndexedSeq}
+  override def companion: GenericCompanion[Stream] = Stream
 
   /** Indicates whether or not the `Stream` is empty.
    *
@@ -360,7 +357,7 @@ self =>
    * `List(BigInt(12)) ++ fibs`.
    *
    * @tparam B The element type of the returned collection.'''That'''
-   * @param that The [[scala.collection.GenTraversableOnce]] the be concatenated
+   * @param that The [[scala.collection.GenTraversableOnce]] to be concatenated
    * to this `Stream`.
    * @return A new collection containing the result of concatenating `this` with
    * `that`.
@@ -528,7 +525,7 @@ self =>
    *  unless the `f` throws an exception.
    */
   @tailrec
-  override final def foreach[B](f: A => B) {
+  override final def foreach[U](f: A => U) {
     if (!this.isEmpty) {
       f(head)
       tail.foreach(f)
@@ -1032,6 +1029,8 @@ self =>
    */
   override def stringPrefix = "Stream"
 
+  override def equals(that: Any): Boolean =
+    if (this eq that.asInstanceOf[AnyRef]) true else super.equals(that)
 }
 
 /** A specialized, extra-lazy implementation of a stream iterator, so it can
@@ -1091,14 +1090,12 @@ object Stream extends SeqFactory[Stream] {
   /** Creates a new builder for a stream */
   def newBuilder[A]: Builder[A, Stream[A]] = new StreamBuilder[A]
 
-  import scala.collection.{Iterable, Seq, IndexedSeq}
-
   /** A builder for streams
    *  @note This builder is lazy only in the sense that it does not go downs the spine
    *        of traversables that are added as a whole. If more laziness can be achieved,
    *        this builder should be bypassed.
    */
-  class StreamBuilder[A] extends scala.collection.mutable.LazyBuilder[A, Stream[A]] {
+  class StreamBuilder[A] extends LazyBuilder[A, Stream[A]] {
     def result: Stream[A] = parts.toStream flatMap (_.toStream)
   }
 
@@ -1175,6 +1172,27 @@ object Stream extends SeqFactory[Stream] {
         }
 
       tlVal
+    }
+
+    override /*LinearSeqOptimized*/
+    def sameElements[B >: A](that: GenIterable[B]): Boolean = {
+      @tailrec def consEq(a: Cons[_], b: Cons[_]): Boolean = {
+        if (a.head != b.head) false
+        else {
+          a.tail match {
+            case at: Cons[_] =>
+              b.tail match {
+                case bt: Cons[_] => (at eq bt) || consEq(at, bt)
+                case _ => false
+              }
+            case _ => b.tail.isEmpty
+          }
+        }
+      }
+      that match {
+        case that: Cons[_] => consEq(this, that)
+        case _ =>             super.sameElements(that)
+      }
     }
   }
 

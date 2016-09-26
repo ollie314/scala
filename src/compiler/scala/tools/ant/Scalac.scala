@@ -10,13 +10,11 @@ package scala.tools.ant
 
 import java.io.{File, PrintWriter, BufferedWriter, FileWriter}
 
-import org.apache.tools.ant.{ BuildException, Project, AntClassLoader }
+import org.apache.tools.ant.{ Project, AntClassLoader}
 import org.apache.tools.ant.taskdefs.Java
 import org.apache.tools.ant.types.{Path, Reference}
-import org.apache.tools.ant.util.{FileUtils, GlobPatternMapper,
-                                  SourceFileScanner, facade}
-import org.apache.tools.ant.util.facade.{FacadeTaskHelper,
-                                  ImplementationSpecificArgument}
+import org.apache.tools.ant.util.{FileUtils, GlobPatternMapper, SourceFileScanner}
+import org.apache.tools.ant.util.facade.{FacadeTaskHelper, ImplementationSpecificArgument}
 
 import scala.tools.nsc.{Global, Settings, CompilerCommand}
 import scala.tools.nsc.io.{Path => SPath}
@@ -90,9 +88,9 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
   object CompilerPhase extends PermissibleValue {
     val values = List("namer", "typer", "pickler", "refchecks",
                       "uncurry", "tailcalls", "specialize", "explicitouter",
-                      "erasure", "lazyvals", "lambdalift", "constructors",
-                      "flatten", "mixin", "delambdafy", "cleanup", "icode", "inliner",
-                      "closelim", "dce", "jvm", "terminal")
+                      "erasure", "fields", "lambdalift", "constructors",
+                      "flatten", "mixin", "delambdafy", "cleanup",
+                      "jvm", "terminal")
   }
 
   /** Defines valid values for the `target` property. */
@@ -553,7 +551,7 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
         val str =
           if (javaFiles.isEmpty) "%d source file%s".format(list.length, plural(list))
           else "%d scala and %d java source files".format(scalaFiles.length, javaFiles.length)
-        log("Compiling %s to %s".format(str, getDestination.toString))
+        log(s"Compiling $str to $getDestination")
       }
       else log("No files selected for compilation", Project.MSG_VERBOSE)
 
@@ -577,8 +575,6 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
       settings.classpath.value = asString(getClasspath)
     if (!sourcepath.isEmpty)
       settings.sourcepath.value = asString(getSourcepath)
-    else if (origin.get.size() > 0)
-      settings.sourcepath.value = origin.get.list()(0)
     if (!bootclasspath.isEmpty)
       settings.bootclasspath.value = asString(getBootclasspath)
     if (!extdirs.isEmpty) settings.extdirs.value = asString(getExtdirs)

@@ -15,11 +15,10 @@ import scala.tools.asm.{Type, MethodVisitor}
 import scala.tools.asm.Opcodes._
 import scala.tools.asm.tree._
 import scala.tools.asm.tree.analysis._
-import scala.tools.nsc.backend.jvm.BTypes.InternalName
 
 import opt.BytecodeUtils._
 
-import scala.collection.convert.decorateAsScala._
+import scala.collection.JavaConverters._
 
 /**
  * This class provides additional queries over ASM's built-in `SourceValue` analysis.
@@ -94,8 +93,13 @@ trait ProdConsAnalyzerImpl {
     inputValues(insn).iterator.flatMap(v => v.insns.asScala).toSet
   }
 
-  def consumersOfOutputsFrom(insn: AbstractInsnNode): Set[AbstractInsnNode] =
-    _consumersOfOutputsFrom.get(insn).map(v => v.indices.flatMap(v.apply)(collection.breakOut): Set[AbstractInsnNode]).getOrElse(Set.empty)
+  def consumersOfOutputsFrom(insn: AbstractInsnNode): Set[AbstractInsnNode] = insn match {
+    case _: UninitializedLocalProducer                 => Set.empty
+    case ParameterProducer(local)                      => consumersOfValueAt(methodNode.instructions.getFirst, local)
+    case ExceptionProducer(handlerLabel, handlerFrame) => consumersOfValueAt(handlerLabel, handlerFrame.stackTop)
+    case _ =>
+      _consumersOfOutputsFrom.get(insn).map(v => v.indices.flatMap(v.apply)(collection.breakOut): Set[AbstractInsnNode]).getOrElse(Set.empty)
+  }
 
   /**
    * Returns the potential initial producer instructions of a value in the frame of `insn`.
@@ -151,13 +155,19 @@ trait ProdConsAnalyzerImpl {
     inputValueSlots(insn).flatMap(slot => initialProducersForValueAt(insn, slot)).toSet
   }
 
-  def ultimateConsumersOfOutputsFrom(insn: AbstractInsnNode): Set[AbstractInsnNode] = {
-    lazy val next = insn.getNext
-    outputValueSlots(insn).flatMap(slot => ultimateConsumersOfValueAt(next, slot)).toSet
+  def ultimateConsumersOfOutputsFrom(insn: AbstractInsnNode): Set[AbstractInsnNode] = insn match {
+    case _: UninitializedLocalProducer => Set.empty
+    case _ =>
+      lazy val next = insn match {
+        case _: ParameterProducer               => methodNode.instructions.getFirst
+        case ExceptionProducer(handlerLabel, _) => handlerLabel
+        case _                                  => insn.getNext
+      }
+      outputValueSlots(insn).flatMap(slot => ultimateConsumersOfValueAt(next, slot)).toSet
   }
 
   private def isCopyOperation(insn: AbstractInsnNode): Boolean = {
-    isVarInstruction(insn) || {
+    isLoadOrStore(insn) || {
       (insn.getOpcode: @switch) match {
         case DUP | DUP_X1 | DUP_X2 | DUP2 | DUP2_X1 | DUP2_X2 | SWAP | CHECKCAST => true
         case _ => false
@@ -368,9 +378,9 @@ trait ProdConsAnalyzerImpl {
       Seq(insn.asInstanceOf[IincInsnNode].`var`)
     } else {
       val frame = frameAt(insn)
-      val stackEffect = InstructionStackEffect(insn, frame)
+      val prodCons = InstructionStackEffect.forAsmAnalysis(insn, frame)
       val stackSize = frame.getLocals + frame.getStackSize
-      (stackSize - stackEffect._1) until stackSize
+      (stackSize - InstructionStackEffect.cons(prodCons)) until stackSize
     }
   }
 
@@ -378,7 +388,7 @@ trait ProdConsAnalyzerImpl {
   private def outputValueSlots(insn: AbstractInsnNode): Seq[Int] = insn match {
     case ParameterProducer(local)          => Seq(local)
     case UninitializedLocalProducer(local) => Seq(local)
-    case ExceptionProducer(frame)          => Seq(frame.stackTop)
+    case ExceptionProducer(_, frame)       => Seq(frame.stackTop)
     case _ =>
       if (insn.getOpcode == -1) return Seq.empty
       if (isStore(insn)) {
@@ -387,10 +397,10 @@ trait ProdConsAnalyzerImpl {
         Seq(insn.asInstanceOf[IincInsnNode].`var`)
       } else {
         val frame = frameAt(insn)
-        val stackEffect = InstructionStackEffect(insn, frame)
+        val prodCons = InstructionStackEffect.forAsmAnalysis(insn, frame)
         val nextFrame = frameAt(insn.getNext)
         val stackSize = nextFrame.getLocals + nextFrame.getStackSize
-        (stackSize - stackEffect._2) until stackSize
+        (stackSize - InstructionStackEffect.prod(prodCons)) until stackSize
       }
   }
 
@@ -430,10 +440,10 @@ trait ProdConsAnalyzerImpl {
  *     return a;
  *   }
  *
- * In the first frame of the method, the SoruceValue for parameter `a` gives an empty set of
+ * In the first frame of the method, the SourceValue for parameter `a` gives an empty set of
  * producer instructions.
  *
- * In the frame of the `IRETURN` instruction, the SoruceValue for parameter `a` lists a single
+ * In the frame of the `IRETURN` instruction, the SourceValue for parameter `a` lists a single
  * producer instruction: the `ISTORE 1`. This makes it look as if there was a single producer for
  * `a`, where in fact it might still hold the parameter's initial value.
  */
@@ -443,9 +453,9 @@ abstract class InitialProducer extends AbstractInsnNode(-1) {
   override def accept(cv: MethodVisitor): Unit = throw new UnsupportedOperationException
 }
 
-case class ParameterProducer(local: Int)                         extends InitialProducer
-case class UninitializedLocalProducer(local: Int)                extends InitialProducer
-case class ExceptionProducer[V <: Value](handlerFrame: Frame[V]) extends InitialProducer
+case class ParameterProducer(local: Int)                                                  extends InitialProducer
+case class UninitializedLocalProducer(local: Int)                                         extends InitialProducer
+case class ExceptionProducer[V <: Value](handlerLabel: LabelNode, handlerFrame: Frame[V]) extends InitialProducer
 
 class InitialProducerSourceInterpreter extends SourceInterpreter {
   override def newParameterValue(isInstanceMethod: Boolean, local: Int, tp: Type): SourceValue = {
@@ -457,6 +467,6 @@ class InitialProducerSourceInterpreter extends SourceInterpreter {
   }
 
   override def newExceptionValue(tryCatchBlockNode: TryCatchBlockNode, handlerFrame: Frame[_ <: Value], exceptionType: Type): SourceValue = {
-    new SourceValue(1, ExceptionProducer(handlerFrame))
+    new SourceValue(1, ExceptionProducer(tryCatchBlockNode.handler, handlerFrame))
   }
 }

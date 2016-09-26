@@ -13,7 +13,7 @@ package immutable
 import scala.annotation.unchecked.uncheckedVariance
 import scala.compat.Platform
 import scala.collection.generic._
-import scala.collection.mutable.Builder
+import scala.collection.mutable.{Builder, ReusableBuilder}
 import scala.collection.parallel.immutable.ParVector
 
 /** Companion object to the Vector class
@@ -40,6 +40,8 @@ object Vector extends IndexedSeqFactory[Vector] {
  *  endian bit-mapped vector trie with a branching factor of 32.  Locality is very good, but not
  *  contiguous, which is good for very large sequences.
  *
+ *  $usesMutableState
+ *
  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#vectors "Scala's Collection Library overview"]]
  *  section on `Vectors` for more information.
  *
@@ -59,6 +61,7 @@ object Vector extends IndexedSeqFactory[Vector] {
  *  @define mayNotTerminateInf
  *  @define willNotTerminateInf
  */
+@SerialVersionUID(-1334388273712300479L)
 final class Vector[+A] private[immutable] (private[collection] val startIndex: Int, private[collection] val endIndex: Int, focus: Int)
 extends AbstractSeq[A]
    with IndexedSeq[A]
@@ -156,7 +159,7 @@ override def companion: GenericCompanion[Vector] = Vector
   override def take(n: Int): Vector[A] = {
     if (n <= 0)
       Vector.empty
-    else if (startIndex + n < endIndex)
+    else if (startIndex < endIndex - n)
       dropBack0(startIndex + n)
     else
       this
@@ -165,7 +168,7 @@ override def companion: GenericCompanion[Vector] = Vector
   override def drop(n: Int): Vector[A] = {
     if (n <= 0)
       this
-    else if (startIndex + n < endIndex)
+    else if (startIndex < endIndex - n)
       dropFront0(startIndex + n)
     else
       Vector.empty
@@ -704,8 +707,8 @@ extends AbstractIterator[A]
   }
 }
 
-
-final class VectorBuilder[A]() extends Builder[A,Vector[A]] with VectorPointer[A @uncheckedVariance] {
+/** A class to build instances of `Vector`.  This builder is reusable. */
+final class VectorBuilder[A]() extends ReusableBuilder[A,Vector[A]] with VectorPointer[A @uncheckedVariance] {
 
   // possible alternative: start with display0 = null, blockIndex = -32, lo = 32
   // to avoid allocating initial array if the result will be empty anyways
@@ -951,8 +954,6 @@ private[immutable] trait VectorPointer[T] {
     // STUFF BELOW USED BY APPEND / UPDATE
 
     private[immutable] final def copyOf(a: Array[AnyRef]) = {
-      //println("copy")
-      if (a eq null) println ("NULL")
       val b = new Array[AnyRef](a.length)
       Platform.arraycopy(a, 0, b, 0, a.length)
       b

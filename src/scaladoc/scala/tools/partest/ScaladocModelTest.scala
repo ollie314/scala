@@ -5,7 +5,6 @@
 
 package scala.tools.partest
 
-import scala.tools.nsc
 import scala.tools.nsc._
 import scala.tools.cmd.CommandLineParser
 import scala.tools.nsc.doc.{ DocFactory, Universe }
@@ -82,7 +81,7 @@ abstract class ScaladocModelTest extends DirectTest {
   private[this] var settings: doc.Settings = null
 
   // create a new scaladoc compiler
-  private[this] def newDocFactory: DocFactory = {
+  def newDocFactory: DocFactory = {
     settings = new doc.Settings(_ => ())
     settings.scaladocQuietRun = true // yaay, no more "model contains X documentable templates"!
     val args = extraSettings + " " + scaladocSettings

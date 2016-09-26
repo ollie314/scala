@@ -7,8 +7,6 @@ package scala.tools
 package nsc
 package settings
 
-import language.existentials
-
 /** Settings influencing the printing of warnings.
  */
 trait Warnings {
@@ -49,7 +47,7 @@ trait Warnings {
     val NullaryOverride        = LintWarning("nullary-override",          "Warn when non-nullary `def f()' overrides nullary `def f'.",                true)
     val InferAny               = LintWarning("infer-any",                 "Warn when a type argument is inferred to be `Any`.",                        true)
     val MissingInterpolator    = LintWarning("missing-interpolator",      "A string literal appears to be missing an interpolator id.")
-    val DocDetached            = LintWarning("doc-detached",              "A ScalaDoc comment appears to be detached from its element.")
+    val DocDetached            = LintWarning("doc-detached",              "A Scaladoc comment appears to be detached from its element.")
     val PrivateShadow          = LintWarning("private-shadow",            "A private field (or class parameter) shadows a superclass field.")
     val TypeParameterShadow    = LintWarning("type-parameter-shadow",     "A local type parameter shadows a type already in scope.")
     val PolyImplicitOverload   = LintWarning("poly-implicit-overload",    "Parameterized overloaded implicit methods are not visible as view bounds.")
@@ -59,6 +57,7 @@ trait Warnings {
     val PackageObjectClasses   = LintWarning("package-object-classes",    "Class or object defined in package object.")
     val UnsoundMatch           = LintWarning("unsound-match",             "Pattern match may not be typesafe.")
     val StarsAlign             = LintWarning("stars-align",               "Pattern sequence wildcard must align with sequence component.")
+    val Constant               = LintWarning("constant",                  "Evaluation of a constant arithmetic expression results in an error.")
 
     def allLintWarnings = values.toSeq.asInstanceOf[Seq[LintWarning]]
   }
@@ -80,6 +79,7 @@ trait Warnings {
   def warnPackageObjectClasses   = lint contains PackageObjectClasses
   def warnUnsoundMatch           = lint contains UnsoundMatch
   def warnStarsAlign             = lint contains StarsAlign
+  def warnConstant               = lint contains Constant
 
   // Lint warnings that are currently -Y, but deprecated in that usage
   @deprecated("Use warnAdaptedArgs", since="2.11.2")

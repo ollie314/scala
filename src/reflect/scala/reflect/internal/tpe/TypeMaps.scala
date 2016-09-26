@@ -449,7 +449,7 @@ private[internal] trait TypeMaps {
     (pre eq NoType) || (pre eq NoPrefix) || !isPossiblePrefix(clazz)
     )
 
-  @deprecated("Use new AsSeenFromMap instead", "2.12.0")
+  @deprecated("use new AsSeenFromMap instead", "2.12.0")
   final def newAsSeenFromMap(pre: Type, clazz: Symbol): AsSeenFromMap = new AsSeenFromMap(pre, clazz)
 
   /** A map to compute the asSeenFrom method.
@@ -610,11 +610,26 @@ private[internal] trait TypeMaps {
     }
 
     // Does the candidate symbol match the given prefix and class?
-    // Since pre may be something like ThisType(A) where trait A { self: B => },
-    // we have to test the typeSymbol of the widened type, not pre.typeSymbol, or
-    // B will not be considered.
-    private def matchesPrefixAndClass(pre: Type, clazz: Symbol)(candidate: Symbol) =
-      (clazz == candidate) && (pre.widen.typeSymbol isSubClass clazz)
+    private def matchesPrefixAndClass(pre: Type, clazz: Symbol)(candidate: Symbol) = (clazz == candidate) && {
+      val pre1 = pre match {
+        case tv: TypeVar =>
+          // Needed with existentials in prefixes, e.g. test/files/pos/typevar-in-prefix.scala
+          // Perhaps the base type sequence of a type var should include its bounds?
+          tv.origin
+        case _ => pre
+      }
+      // widen needed (at least) because of https://github.com/scala/scala-dev/issues/166
+      (
+        if (clazz.isRefinementClass)
+          // base type seqs of aliases over refinement types have copied refinement types based on beta reduction
+          // for reliable lookup we need to consult the base type of the type symbol. (example: pos/t8177b.scala)
+          pre1.widen.typeSymbol isSubClass clazz
+        else
+          // In the general case, we look at the base type sequence of the prefix itself,
+          // which can have more concrete base classes than `.typeSymbol.baseClasses` (example: t5294, t6161)
+          pre1.widen.baseTypeIndex(clazz) != -1
+      )
+    }
 
     // Whether the annotation tree currently being mapped over has had a This(_) node rewritten.
     private[this] var wroteAnnotation = false
@@ -1001,10 +1016,23 @@ private[internal] trait TypeMaps {
   class ContainsCollector(sym: Symbol) extends TypeCollector(false) {
     def traverse(tp: Type) {
       if (!result) {
-        tp.normalize match {
-          case TypeRef(_, sym1, _) if (sym == sym1) => result = true
-          case SingleType(_, sym1) if (sym == sym1) => result = true
-          case _ => mapOver(tp)
+        tp match {
+          case _: ExistentialType =>
+            // ExistentialType#normalize internally calls contains, which leads to exponential performance
+            // for types like: `A[_ <: B[_ <: ... ]]`. Example: pos/existential-contains.scala.
+            //
+            // We can just map over the components and wait until we see the underlying type before we call
+            // normalize.
+            mapOver(tp)
+          case _ =>
+            tp.normalize match {
+              case TypeRef(_, sym1, _) if (sym == sym1) => result = true
+              case refined: RefinedType =>
+                mapOver(tp.prefix)
+                mapOver(refined)
+              case SingleType(_, sym1) if (sym == sym1) => result = true
+              case _ => mapOver(tp)
+            }
         }
       }
     }

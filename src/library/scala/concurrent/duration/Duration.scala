@@ -9,8 +9,6 @@
 package scala.concurrent.duration
 
 import java.lang.{ Double => JDouble, Long => JLong }
-import scala.language.implicitConversions
-import scala.language.postfixOps
 
 object Duration {
 
@@ -57,7 +55,7 @@ object Duration {
       case "Inf" | "PlusInf" | "+Inf" => Inf
       case "MinusInf" | "-Inf"        => MinusInf
       case _                          =>
-        val unitName = s1.reverse takeWhile (_.isLetter) reverse;
+        val unitName = s1.reverse.takeWhile(_.isLetter).reverse;
         timeUnit get unitName match {
           case Some(unit) =>
             val valueStr = s1 dropRight unitName.length
@@ -87,14 +85,14 @@ object Duration {
 
   // TimeUnit => standard label
   protected[duration] val timeUnitName: Map[TimeUnit, String] =
-    timeUnitLabels.toMap mapValues (s => words(s).last) toMap
+    timeUnitLabels.toMap.mapValues(s => words(s).last).toMap
 
   // Label => TimeUnit
   protected[duration] val timeUnit: Map[String, TimeUnit] =
-    timeUnitLabels flatMap { case (unit, names) => expandLabels(names) map (_ -> unit) } toMap
+    timeUnitLabels.flatMap{ case (unit, names) => expandLabels(names) map (_ -> unit) }.toMap
 
   /**
-   * Extract length and time unit out of a string, where the format must match the description for [[Duration$.apply(String):Duration apply(String)]].
+   * Extract length and time unit out of a string, where the format must match the description for [[Duration$.apply(s:String)* apply(String)]].
    * The extractor will not match for malformed strings or non-finite durations.
    */
   def unapply(s: String): Option[(Long, TimeUnit)] =
@@ -355,7 +353,7 @@ object Duration {
  *  - isomorphic to `java.lang.Double` when it comes to infinite or undefined values
  *
  * The conversion between Duration and Double is done using [[Duration.toUnit]] (with unit NANOSECONDS)
- * and [[Duration$.fromNanos(Double):Duration Duration.fromNanos(Double)]].
+ * and [[Duration$.fromNanos(nanos:Double)* Duration.fromNanos(Double)]]
  *
  * <h2>Ordering</h2>
  *

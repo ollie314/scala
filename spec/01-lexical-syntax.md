@@ -49,6 +49,8 @@ classes (Unicode general category given in parentheses):
 ```ebnf
 op       ::=  opchar {opchar}
 varid    ::=  lower idrest
+boundvarid ::=  varid
+             | ‘`’ varid ‘`’
 plainid  ::=  upper idrest
            |  varid
            |  op
@@ -90,11 +92,11 @@ syntactic class `id` of lexical identifiers.
 abstract    case        catch       class       def
 do          else        extends     false       final
 finally     for         forSome     if          implicit
-import      lazy        match       new         null
-object      override    package     private     protected
-return      sealed      super       this        throw
-trait       try         true        type        val
-var         while       with        yield
+import      lazy        macro       match       new
+null        object      override    package     private
+protected   return      sealed      super       this
+throw       trait       try         true        type
+val         var         while       with        yield
 _    :    =    =>    <-    <:    <%     >:    #    @
 ```
 

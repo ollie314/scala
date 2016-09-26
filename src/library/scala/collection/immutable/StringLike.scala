@@ -10,7 +10,7 @@ package scala
 package collection
 package immutable
 
-import mutable.{ ArrayBuilder, Builder }
+import mutable.Builder
 import scala.util.matching.Regex
 import scala.math.ScalaNumber
 import scala.reflect.ClassTag
@@ -100,11 +100,13 @@ self =>
   /** Return all lines in this string in an iterator, including trailing
    *  line end characters.
    *
-   *  The number of strings returned is one greater than the number of line
-   *  end characters in this string. For an empty string, a single empty
-   *  line is returned. A line end character is one of
-   *  - `LF` - line feed   (`0x0A` hex)
-   *  - `FF` - form feed   (`0x0C` hex)
+   *  This method is analogous to `s.split(EOL).toIterator`,
+   *  except that any existing line endings are preserved in the result strings,
+   *  and the empty string yields an empty iterator.
+   *
+   *  A line end character is one of
+   *  - `LF` - line feed   (`0x0A`)
+   *  - `FF` - form feed   (`0x0C`)
    */
   def linesWithSeparators: Iterator[String] = new AbstractIterator[String] {
     val str = self.toString
@@ -121,17 +123,17 @@ self =>
   }
 
   /** Return all lines in this string in an iterator, excluding trailing line
-   *  end characters, i.e., apply `.stripLineEnd` to all lines
+   *  end characters; i.e., apply `.stripLineEnd` to all lines
    *  returned by `linesWithSeparators`.
    */
   def lines: Iterator[String] =
     linesWithSeparators map (line => new WrappedString(line).stripLineEnd)
 
   /** Return all lines in this string in an iterator, excluding trailing line
-   *  end characters, i.e., apply `.stripLineEnd` to all lines
+   *  end characters; i.e., apply `.stripLineEnd` to all lines
    *  returned by `linesWithSeparators`.
    */
-  @deprecated("Use `lines` instead.","2.11.0")
+  @deprecated("use `lines` instead","2.11.0")
   def linesIterator: Iterator[String] =
     linesWithSeparators map (line => new WrappedString(line).stripLineEnd)
 
@@ -208,32 +210,32 @@ self =>
     else "\\" + ch
 
   /** Split this string around the separator character
-   * 
+   *
    * If this string is the empty string, returns an array of strings
    * that contains a single empty string.
-   * 
+   *
    * If this string is not the empty string, returns an array containing
    * the substrings terminated by the start of the string, the end of the
    * string or the separator character, excluding empty trailing substrings
-   * 
-   * If the separator character is a surrogate character, only split on 
+   *
+   * If the separator character is a surrogate character, only split on
    * matching surrogate characters if they are not part of a surrogate pair
-   * 
+   *
    * The behaviour follows, and is implemented in terms of <a href="http://docs.oracle.com/javase/7/docs/api/java/lang/String.html#split%28java.lang.String%29">String.split(re: String)</a>
-   * 
-   * 
+   *
+   *
    * @example {{{
    * "a.b".split('.') //returns Array("a", "b")
-   * 
+   *
    * //splitting the empty string always returns the array with a single
    * //empty string
-   * "".split('.') //returns Array("") 
-   * 
+   * "".split('.') //returns Array("")
+   *
    * //only trailing empty substrings are removed
    * "a.".split('.') //returns Array("a")
    * ".a.".split('.') //returns Array("", "a")
    * "..a..".split('.') //returns Array("", "", "a")
-   * 
+   *
    * //all parts are empty and trailing
    * ".".split('.') //returns Array()
    * "..".split('.') //returns Array()
@@ -247,16 +249,16 @@ self =>
    * //well-formed surrogate pairs are not split
    * val highlow = highstring + lowstring
    * highlow.split(high) //returns Array(highlow)
-   * 
+   *
    * //bare surrogate characters are split
    * val bare = "_" + highstring + "_"
    * bare.split(high) //returns Array("_", "_")
-   * 
+   *
    *  }}}
-   * 
+   *
    * @param separator the character used as a delimiter
    */
-  def split(separator: Char): Array[String] = 
+  def split(separator: Char): Array[String] =
     toString.split(escape(separator))
 
 
@@ -284,31 +286,39 @@ self =>
   def r(groupNames: String*): Regex = new Regex(toString, groupNames: _*)
 
   /**
-   * @throws java.lang.IllegalArgumentException - If the string does not contain a parsable boolean.
+   * @throws java.lang.IllegalArgumentException  If the string does not contain a parsable `Boolean`.
    */
   def toBoolean: Boolean = parseBoolean(toString)
   /**
-   * @throws java.lang.NumberFormatException - If the string does not contain a parsable byte.
+   * Parse as a `Byte` (string must contain only decimal digits and optional leading `-`).
+   * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Byte`.
    */
   def toByte: Byte       = java.lang.Byte.parseByte(toString)
   /**
-   * @throws java.lang.NumberFormatException - If the string does not contain a parsable short.
+   * Parse as a `Short` (string must contain only decimal digits and optional leading `-`).
+   * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Short`.
    */
   def toShort: Short     = java.lang.Short.parseShort(toString)
   /**
-   * @throws java.lang.NumberFormatException  - If the string does not contain a parsable int.
+   * Parse as an `Int` (string must contain only decimal digits and optional leading `-`).
+   * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Int`.
    */
   def toInt: Int         = java.lang.Integer.parseInt(toString)
   /**
-   * @throws java.lang.NumberFormatException  - If the string does not contain a parsable long.
+   * Parse as a `Long` (string must contain only decimal digits and optional leading `-`).
+   * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Long`.
    */
   def toLong: Long       = java.lang.Long.parseLong(toString)
   /**
-   * @throws java.lang.NumberFormatException - If the string does not contain a parsable float.
+    * Parse as a `Float` (surrounding whitespace is removed with a `trim`).
+    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Float`.
+    * @throws java.lang.NullPointerException  If the string is null.
    */
   def toFloat: Float     = java.lang.Float.parseFloat(toString)
   /**
-   * @throws java.lang.NumberFormatException - If the string does not contain a parsable double.
+    * Parse as a `Double` (surrounding whitespace is removed with a `trim`).
+    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Double`.
+    * @throws java.lang.NullPointerException  If the string is null.
    */
   def toDouble: Double   = java.lang.Double.parseDouble(toString)
 
@@ -334,8 +344,7 @@ self =>
    *  holes.
    *
    *    The interpretation of the formatting patterns is described in
-   *    <a href="" target="contentFrame" class="java/util/Formatter">
-   *    `java.util.Formatter`</a>, with the addition that
+   *    [[java.util.Formatter]], with the addition that
    *    classes deriving from `ScalaNumber` (such as [[scala.BigInt]] and
    *    [[scala.BigDecimal]]) are unwrapped to pass a type which `Formatter`
    *    understands.
@@ -350,8 +359,7 @@ self =>
    *  which influences formatting as in `java.lang.String`'s format.
    *
    *    The interpretation of the formatting patterns is described in
-   *    <a href="" target="contentFrame" class="java/util/Formatter">
-   *    `java.util.Formatter`</a>, with the addition that
+   *    [[java.util.Formatter]], with the addition that
    *    classes deriving from `ScalaNumber` (such as `scala.BigInt` and
    *    `scala.BigDecimal`) are unwrapped to pass a type which `Formatter`
    *    understands.

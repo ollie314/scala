@@ -2,36 +2,24 @@ package scala.tools.nsc
 package backend.jvm
 package opt
 
+import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
-import org.junit.Test
+
+import scala.collection.JavaConverters._
 import scala.tools.asm.Opcodes._
-import org.junit.Assert._
-
 import scala.tools.asm.tree._
-import scala.tools.testing.AssertUtil._
-
-import CodeGenTools._
-import scala.tools.partest.ASMConverters
-import ASMConverters._
-import AsmUtils._
-
-import scala.collection.convert.decorateAsScala._
-import scala.tools.testing.ClearAfterClass
-
-object InlinerIllegalAccessTest extends ClearAfterClass.Clearable {
-  var compiler = newCompiler(extraArgs = "-Ybackend:GenBCode -Yopt:l:none")
-  def clear(): Unit = { compiler = null }
-}
+import scala.tools.nsc.backend.jvm.AsmUtils._
+import scala.tools.testing.BytecodeTesting
 
 @RunWith(classOf[JUnit4])
-class InlinerIllegalAccessTest extends ClearAfterClass {
-  ClearAfterClass.stateToClear = InlinerIllegalAccessTest
+class InlinerIllegalAccessTest extends BytecodeTesting {
+  override def compilerArgs = "-opt:l:none"
 
-  val compiler = InlinerIllegalAccessTest.compiler
-  import compiler.genBCode.bTypes._
+  import compiler._
+  import global.genBCode.bTypes._
 
-  def addToRepo(cls: List[ClassNode]): Unit = for (c <- cls) byteCodeRepository.add(c, ByteCodeRepository.Classfile)
+  def addToRepo(cls: List[ClassNode]): Unit = for (c <- cls) byteCodeRepository.add(c, None)
   def assertEmpty(ins: Option[AbstractInsnNode]) = for (i <- ins)
     throw new AssertionError(textify(i))
 
@@ -51,7 +39,7 @@ class InlinerIllegalAccessTest extends ClearAfterClass {
         |}
       """.stripMargin
 
-    val allClasses = compileClasses(compiler)(code)
+    val allClasses = compileClasses(code)
     val List(cClass, dClass, eClass) = allClasses
     assert(cClass.name == "a/C" && dClass.name == "a/D" && eClass.name == "b/E", s"${cClass.name}, ${dClass.name}, ${eClass.name}")
     addToRepo(allClasses) // they are not on the compiler's classpath, so we add them manually to the code repo
@@ -127,7 +115,7 @@ class InlinerIllegalAccessTest extends ClearAfterClass {
         |}
       """.stripMargin
 
-    val allClasses = compileClasses(compiler)(code)
+    val allClasses = compileClasses(code)
     val List(cCl, dCl, eCl, fCl, gCl, hCl, iCl) = allClasses
     addToRepo(allClasses)
 

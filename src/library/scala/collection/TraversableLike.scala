@@ -11,7 +11,7 @@ package collection
 
 import generic._
 import mutable.{ Builder }
-import scala.annotation.{tailrec, migration, bridge}
+import scala.annotation.migration
 import scala.annotation.unchecked.{ uncheckedVariance => uV }
 import parallel.ParIterable
 import scala.language.higherKinds
@@ -138,17 +138,6 @@ trait TraversableLike[+A, +Repr] extends Any
     result
   }
 
-  /** Tests whether this $coll is known to have a finite size.
-   *  All strict collections are known to have finite size. For a non-strict
-   *  collection such as `Stream`, the predicate returns `'''true'''` if all
-   *  elements have been computed. It returns `'''false'''` if the stream is
-   *  not yet evaluated to the end.
-   *
-   *  Note: many collection methods will not work on collections of infinite sizes.
-   *
-   *  @return  `'''true'''` if this collection is known to have finite size,
-   *           `'''false'''` otherwise.
-   */
   def hasDefiniteSize = true
 
   def ++[B >: A, That](that: GenTraversableOnce[B])(implicit bf: CanBuildFrom[Repr, B, That]): That = {
@@ -340,14 +329,6 @@ trait TraversableLike[+A, +Repr] extends Any
     b.result
   }
 
-  /** Tests whether a predicate holds for all elements of this $coll.
-   *
-   *  $mayNotTerminateInf
-   *
-   *  @param   p     the predicate used to test elements.
-   *  @return        `true`  if this $coll is empty, otherwise `true` if the given predicate `p`
-    *                holds for all elements of this $coll, otherwise `false`.
-   */
   def forall(p: A => Boolean): Boolean = {
     var result = true
     breakable {
@@ -357,7 +338,7 @@ trait TraversableLike[+A, +Repr] extends Any
     result
   }
 
-  /** Tests whether a predicate holds for some of the elements of this $coll.
+  /** Tests whether a predicate holds for at least one element of this $coll.
    *
    *  $mayNotTerminateInf
    *
@@ -374,15 +355,6 @@ trait TraversableLike[+A, +Repr] extends Any
     result
   }
 
-  /** Finds the first element of the $coll satisfying a predicate, if any.
-   *
-   *  $mayNotTerminateInf
-   *  $orderDependent
-   *
-   *  @param p    the predicate used to test elements.
-   *  @return     an option value containing the first element in the $coll
-   *              that satisfies `p`, or `None` if none exists.
-   */
   def find(p: A => Boolean): Option[A] = {
     var result: Option[A] = None
     breakable {
@@ -594,23 +566,6 @@ trait TraversableLike[+A, +Repr] extends Any
    */
   def inits: Iterator[Repr] = iterateUntilEmpty(_.init)
 
-  /** Copies elements of this $coll to an array.
-   *  Fills the given array `xs` with at most `len` elements of
-   *  this $coll, starting at position `start`.
-   *  Copying will stop once either the end of the current $coll is reached,
-   *  or the end of the array is reached, or `len` elements have been copied.
-   *
-   *  @param  xs     the array to fill.
-   *  @param  start  the starting index.
-   *  @param  len    the maximal number of elements to copy.
-   *  @tparam B      the type of the elements of the array.
-   *
-   *
-   *  @usecase def copyToArray(xs: Array[A], start: Int, len: Int): Unit
-   *    @inheritdoc
-   *
-   *    $willNotTerminateInf
-   */
   def copyToArray[B >: A](xs: Array[B], start: Int, len: Int) {
     var i = start
     val end = (start + len) min xs.length
@@ -625,7 +580,7 @@ trait TraversableLike[+A, +Repr] extends Any
 
   @deprecatedOverriding("Enforce contract of toTraversable that if it is Traversable it returns itself.", "2.11.0")
   def toTraversable: Traversable[A] = thisCollection
-  
+
   def toIterator: Iterator[A] = toStream.iterator
   def toStream: Stream[A] = toBuffer.toStream
   // Override to provide size hint.
@@ -651,12 +606,21 @@ trait TraversableLike[+A, +Repr] extends Any
    *           simple name of the collection class $coll.
    */
   def stringPrefix : String = {
-    var string = repr.getClass.getName
-    val idx1 = string.lastIndexOf('.' : Int)
-    if (idx1 != -1) string = string.substring(idx1 + 1)
-    val idx2 = string.indexOf('$')
-    if (idx2 != -1) string = string.substring(0, idx2)
-    string
+    val fqn = repr.getClass.getName
+    val cls = {
+      val idx1 = fqn.lastIndexOf('.' : Int)
+      if (idx1 != -1) fqn.substring(idx1 + 1) else fqn
+    }
+    val parts = cls.split('$')
+    val last = parts.length - 1
+    parts.zipWithIndex.foldLeft("") { case (z, (s, i)) =>
+      if (s.isEmpty) z
+      else if (i != last && s.forall(java.lang.Character.isDigit)) "" // drop prefix in method-local classes
+      else if (i == 0 || java.lang.Character.isUpperCase(s.charAt(0))) {
+        if (z.isEmpty) s else z + '.' + s
+      }
+      else z
+    }
   }
 
   /** Creates a non-strict view of this $coll.

@@ -49,8 +49,7 @@ object TreeSet extends ImmutableSortedSetFactory[TreeSet] {
  *  @define willNotTerminateInf
  */
 @SerialVersionUID(-5685982407650748405L)
-@deprecatedInheritance("The implementation details of immutable tree sets make inheriting from them unwise.", "2.11.0")
-class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: Ordering[A])
+final class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: Ordering[A])
   extends SortedSet[A] with SortedSetLike[A, TreeSet[A]] with Serializable {
 
   if (ordering eq null)
@@ -151,7 +150,7 @@ class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: Orderin
   def iterator: Iterator[A] = RB.keysIterator(tree)
   override def keysIteratorFrom(start: A): Iterator[A] = RB.keysIterator(tree, Some(start))
 
-  override def foreach[U](f: A =>  U) = RB.foreachKey(tree, f)
+  override def foreach[U](f: A => U) = RB.foreachKey(tree, f)
 
   override def rangeImpl(from: Option[A], until: Option[A]): TreeSet[A] = newSet(RB.rangeImpl(tree, from, until))
   override def range(from: A, until: A): TreeSet[A] = newSet(RB.range(tree, from, until))

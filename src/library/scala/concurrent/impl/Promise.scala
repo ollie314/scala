@@ -8,13 +8,13 @@
 
 package scala.concurrent.impl
 
-import scala.concurrent.{ ExecutionContext, CanAwait, OnCompleteRunnable, TimeoutException, ExecutionException, blocking }
+import scala.concurrent.{ ExecutionContext, CanAwait, OnCompleteRunnable, TimeoutException, ExecutionException }
 import scala.concurrent.Future.InternalCallbackExecutor
-import scala.concurrent.duration.{ Duration, Deadline, FiniteDuration, NANOSECONDS }
+import scala.concurrent.duration.{ Duration, FiniteDuration }
 import scala.annotation.tailrec
 import scala.util.control.NonFatal
 import scala.util.{ Try, Success, Failure }
-import java.io.ObjectInputStream
+
 import java.util.concurrent.locks.AbstractQueuedSynchronizer
 import java.util.concurrent.atomic.AtomicReference
 
@@ -304,7 +304,7 @@ private[concurrent] object Promise {
 
     /** Tries to add the callback, if already completed, it dispatches the callback to be executed.
      *  Used by `onComplete()` to add callbacks to a promise and by `link()` to transfer callbacks
-     *  to the root promise when linking two promises togehter.
+     *  to the root promise when linking two promises together.
      */
     @tailrec
     private def dispatchOrAddCallback(runnable: CallbackRunnable[T]): Unit = {
@@ -393,7 +393,7 @@ private[concurrent] object Promise {
       override def collect[S](pf: PartialFunction[T, S])(implicit executor: ExecutionContext): Future[S] = thisAs[S]
       override def zip[U](that: Future[U]): Future[(T, U)] = thisAs[(T,U)]
       override def zipWith[U, R](that: Future[U])(f: (T, U) => R)(implicit executor: ExecutionContext): Future[R] = thisAs[R]
-      override def fallbackTo[U >: T](that: Future[U]): Future[U] = 
+      override def fallbackTo[U >: T](that: Future[U]): Future[U] =
         if (this eq that) this else that.recoverWith({ case _ => this })(InternalCallbackExecutor)
       override def mapTo[S](implicit tag: ClassTag[S]): Future[S] = thisAs[S]
     }

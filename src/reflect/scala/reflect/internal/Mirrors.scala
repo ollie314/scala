@@ -175,7 +175,7 @@ trait Mirrors extends api.Mirrors {
     def getPackageIfDefined(fullname: TermName): Symbol =
       wrapMissing(getPackage(fullname))
 
-    @deprecated("Use getPackage", "2.11.0") def getRequiredPackage(fullname: String): ModuleSymbol =
+    @deprecated("use getPackage", "2.11.0") def getRequiredPackage(fullname: String): ModuleSymbol =
       getPackage(newTermNameCached(fullname))
 
     def getPackageObject(fullname: String): ModuleSymbol = getPackageObject(newTermName(fullname))
@@ -273,7 +273,7 @@ trait Mirrors extends api.Mirrors {
     // is very beneficial for a handful of bootstrap symbols to have
     // first class identities
     sealed trait WellKnownSymbol extends Symbol {
-      this initFlags (TopLevelCreationFlags | STATIC)
+      this initFlags (PackageFlags | STATIC)
     }
     // Features common to RootClass and RootPackage, the roots of all
     // type and term symbols respectively.

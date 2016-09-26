@@ -8,16 +8,16 @@ package tools.nsc
 package symtab
 package classfile
 
-import java.io.{ File, IOException }
+import java.io.{File, IOException}
 import java.lang.Integer.toHexString
-import scala.collection.{ mutable, immutable }
-import scala.collection.mutable.{ ListBuffer, ArrayBuffer }
+import scala.collection.{immutable, mutable}
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.annotation.switch
-import scala.reflect.internal.{ JavaAccFlags }
-import scala.reflect.internal.pickling.{PickleBuffer, ByteCodecs}
+import scala.reflect.internal.JavaAccFlags
+import scala.reflect.internal.pickling.{ByteCodecs, PickleBuffer}
 import scala.reflect.io.NoAbstractFile
+import scala.tools.nsc.util.ClassPath
 import scala.tools.nsc.io.AbstractFile
-import scala.tools.nsc.util.ClassFileLookup
 
 /** This abstract class implements a class file parser.
  *
@@ -43,8 +43,8 @@ abstract class ClassfileParser {
    */
   protected def lookupMemberAtTyperPhaseIfPossible(sym: Symbol, name: Name): Symbol
 
-  /** The way of the class file lookup used by the compiler. */
-  def classFileLookup: ClassFileLookup[AbstractFile]
+  /** The compiler classpath. */
+  def classPath: ClassPath
 
   import definitions._
   import scala.reflect.internal.ClassfileConstants._
@@ -357,7 +357,7 @@ abstract class ClassfileParser {
   }
 
   private def loadClassSymbol(name: Name): Symbol = {
-    val file = classFileLookup findClassFile name.toString getOrElse {
+    val file = classPath findClassFile name.toString getOrElse {
       // SI-5593 Scaladoc's current strategy is to visit all packages in search of user code that can be documented
       // therefore, it will rummage through the classpath triggering errors whenever it encounters package objects
       // that are not in their correct place (see bug for details)
@@ -366,7 +366,7 @@ abstract class ClassfileParser {
       //   - better owner than `NoSymbol`
       //   - remove eager warning
       val msg = s"Class $name not found - continuing with a stub."
-      if (!settings.isScaladoc) warning(msg)
+      if ((!settings.isScaladoc) && (settings.verbose || settings.developer)) warning(msg)
       return NoSymbol.newStubSymbol(name.toTypeName, msg)
     }
     val completer     = new loaders.ClassfileLoader(file)
@@ -542,7 +542,7 @@ abstract class ClassfileParser {
             devWarning(s"no linked class for java enum $sym in ${sym.owner}. A referencing class file might be missing an InnerClasses entry.")
           case linked =>
             if (!linked.isSealed)
-              // Marking the enum class SEALED | ABSTRACT enables exhaustiveness checking.
+              // Marking the enum class SEALED | ABSTRACT enables exhaustiveness checking. See also JavaParsers.
               // This is a bit of a hack and requires excluding the ABSTRACT flag in the backend, see method javaClassfileFlags.
               linked setFlag (SEALED | ABSTRACT)
             linked addChild sym
@@ -816,6 +816,23 @@ abstract class ClassfileParser {
           val c1 = convertTo(c, symtype)
           if (c1 ne null) sym.setInfo(ConstantType(c1))
           else devWarning(s"failure to convert $c to $symtype")
+        case tpnme.MethodParametersATTR =>
+          def readParamNames(): Unit = {
+            import tools.asm.Opcodes.ACC_SYNTHETIC
+            val paramCount = u1
+            var i = 0
+            while (i < paramCount) {
+              val name = pool.getName(u2)
+              val access = u2
+              if ((access & ACC_SYNTHETIC) != ACC_SYNTHETIC) { // name not synthetic
+                val params = sym.paramss.head // Java only has exactly one parameter list
+                params(i).name = name.encode
+                params(i).resetFlag(SYNTHETIC)
+              }
+              i += 1
+            }
+          }
+          readParamNames()
         case tpnme.ScalaSignatureATTR =>
           if (!isScalaAnnot) {
             devWarning(s"symbol ${sym.fullName} has pickled signature in attribute")
@@ -1062,7 +1079,7 @@ abstract class ClassfileParser {
     for (entry <- innerClasses.entries) {
       // create a new class member for immediate inner classes
       if (entry.outerName == currentClass) {
-        val file = classFileLookup.findClassFile(entry.externalName.toString)
+        val file = classPath.findClassFile(entry.externalName.toString)
         enterClassAndModule(entry, file.getOrElse(NoAbstractFile))
       }
     }

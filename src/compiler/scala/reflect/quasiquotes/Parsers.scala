@@ -3,10 +3,7 @@ package quasiquotes
 
 import scala.tools.nsc.ast.parser.{Parsers => ScalaParser}
 import scala.tools.nsc.ast.parser.Tokens._
-import scala.compat.Platform.EOL
 import scala.reflect.internal.util.{BatchSourceFile, SourceFile, FreshNameCreator}
-import scala.collection.mutable.ListBuffer
-import scala.util.Try
 
 /** Builds upon the vanilla Scala parser and teams up together with Placeholders.scala to emulate holes.
  *  A principled solution to splicing into Scala syntax would be a parser that natively supports holes.
@@ -58,6 +55,10 @@ trait Parsers { self: Quasiquotes =>
       def isHole(name: Name): Boolean = holeMap.contains(name)
 
       override implicit lazy val fresh: FreshNameCreator = new FreshNameCreator(nme.QUASIQUOTE_PREFIX)
+
+      // Do not check for tuple arity. The placeholders can support arbitrary tuple sizes.
+      override def makeSafeTupleTerm(trees: List[Tree], offset: Offset): Tree = treeBuilder.makeTupleTerm(trees)
+      override def makeSafeTupleType(trees: List[Tree], offset: Offset): Tree = treeBuilder.makeTupleType(trees)
 
       override val treeBuilder = new ParserTreeBuilder {
         override implicit def fresh: FreshNameCreator = parser.fresh

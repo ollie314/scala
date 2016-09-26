@@ -105,7 +105,7 @@ private[scala] trait PropertiesTrait {
    *  or "version (unknown)" if it cannot be determined.
    */
   val versionString         = "version " + scalaPropOrElse("version.number", "(unknown)")
-  val copyrightString       = scalaPropOrElse("copyright.string", "Copyright 2002-2015, LAMP/EPFL")
+  val copyrightString       = scalaPropOrElse("copyright.string", "Copyright 2002-2016, LAMP/EPFL")
 
   /** This is the encoding to use reading in source files, overridden with -encoding.
    *  Note that it uses "prop" i.e. looks in the scala jar, not the system properties.
@@ -120,7 +120,7 @@ private[scala] trait PropertiesTrait {
 
   /** The default end of line character.
    */
-  def lineSeparator         = propOrElse("line.separator", "\n")
+  def lineSeparator         = System.lineSeparator()
 
   /* Various well-known properties. */
   def javaClassPath         = propOrEmpty("java.class.path")
@@ -148,6 +148,8 @@ private[scala] trait PropertiesTrait {
   // the reason why we don't follow developer.apple.com/library/mac/#technotes/tn2002/tn2110.
   /** Returns `true` iff the underlying operating system is a version of Apple Mac OSX.  */
   def isMac                 = osName startsWith "Mac OS X"
+  /** Returns `true` iff the underlying operating system is a Linux distribution. */
+  def isLinux               = osName startsWith "Linux"
 
   /* Some runtime values. */
   private[scala] def isAvian = javaVmName contains "Avian"

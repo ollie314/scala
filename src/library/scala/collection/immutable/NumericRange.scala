@@ -10,8 +10,6 @@ package scala
 package collection
 package immutable
 
-import mutable.{ Builder, ListBuffer }
-
 // TODO: Now the specialization exists there is no clear reason to have
 // separate classes for Range/NumericRange.  Investigate and consolidate.
 
@@ -163,6 +161,12 @@ extends AbstractSeq[T] with IndexedSeq[T] with Serializable {
       override def isEmpty = underlyingRange.isEmpty
       override def apply(idx: Int): A = fm(underlyingRange(idx))
       override def containsTyped(el: A) = underlyingRange exists (x => fm(x) == el)
+
+      override def toString = {
+        def simpleOf(x: Any): String = x.getClass.getName.split("\\.").last
+        val stepped = simpleOf(underlyingRange.step)
+        s"${super.toString} (using $underlyingRange of $stepped)"
+      }
     }
   }
 
@@ -193,7 +197,7 @@ extends AbstractSeq[T] with IndexedSeq[T] with Serializable {
         // Either numRangeElements or (head + last) must be even, so divide the even one before multiplying
         val a = head.toLong
         val b = last.toLong
-        val ans = 
+        val ans =
           if ((numRangeElements & 1) == 0) (numRangeElements / 2) * (a + b)
           else numRangeElements * {
             // Sum is even, but we might overflow it, so divide in pieces and add back remainder
@@ -252,9 +256,11 @@ extends AbstractSeq[T] with IndexedSeq[T] with Serializable {
       super.equals(other)
   }
 
-  override def toString() = {
-    val endStr = if (length > Range.MAX_PRINT) ", ... )" else ")"
-    take(Range.MAX_PRINT).mkString("NumericRange(", ", ", endStr)
+  override def toString = {
+    val empty = if (isEmpty) "empty " else ""
+    val preposition = if (isInclusive) "to" else "until"
+    val stepped = if (step == 1) "" else s" by $step"
+    s"${empty}NumericRange $start $preposition $end$stepped"
   }
 }
 

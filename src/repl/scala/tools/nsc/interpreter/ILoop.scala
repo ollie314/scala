@@ -1,5 +1,5 @@
 /* NSC -- new Scala compiler
- * Copyright 2005-2015 LAMP/EPFL
+ * Copyright 2005-2016 LAMP/EPFL
  * @author Alexander Spoon
  */
 package scala
@@ -12,18 +12,17 @@ import Predef.{ println => _, _ }
 import interpreter.session._
 import StdReplTags._
 import scala.tools.asm.ClassReader
-import scala.util.Properties.{ jdkHome, javaVersion, versionString, javaVmName }
-import scala.tools.nsc.util.{ ClassPath, Exceptional, stringFromWriter, stringFromStream }
+import scala.util.Properties.jdkHome
+import scala.tools.nsc.util.{ ClassPath, stringFromStream }
 import scala.reflect.classTag
-import scala.reflect.internal.util.{ BatchSourceFile, ScalaClassLoader }
+import scala.reflect.internal.util.{ BatchSourceFile, ScalaClassLoader, NoPosition }
 import ScalaClassLoader._
-import scala.reflect.io.{ File, Directory }
+import scala.reflect.io.File
 import scala.tools.util._
 import io.AbstractFile
-import scala.collection.generic.Clearable
-import scala.concurrent.{ ExecutionContext, Await, Future, future }
+import scala.concurrent.{ ExecutionContext, Await, Future }
 import ExecutionContext.Implicits._
-import java.io.{ BufferedReader, FileReader, StringReader }
+import java.io.BufferedReader
 
 import scala.util.{ Try, Success, Failure }
 
@@ -46,8 +45,8 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
   def this(in0: BufferedReader, out: JPrintWriter) = this(Some(in0), out)
   def this() = this(None, new JPrintWriter(Console.out, true))
 
-  @deprecated("Use `intp` instead.", "2.9.0") def interpreter = intp
-  @deprecated("Use `intp` instead.", "2.9.0") def interpreter_= (i: Interpreter): Unit = intp = i
+  @deprecated("use `intp` instead.", "2.9.0") def interpreter = intp
+  @deprecated("use `intp` instead.", "2.9.0") def interpreter_= (i: Interpreter): Unit = intp = i
 
   var in: InteractiveReader = _   // the input stream from which commands come
   var settings: Settings = _
@@ -74,7 +73,7 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
   def history = in.history
 
   // classpath entries added via :cp
-  @deprecated("Use reset, replay or require to update class path", since = "2.11")
+  @deprecated("use reset, replay or require to update class path", since = "2.11.0")
   var addedClasspath: String = ""
 
   /** A reverse list of commands to replay if the user requests a :replay */
@@ -175,10 +174,19 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     echo("\n" + msg)
     in.redrawLine()
   }
-  protected def echo(msg: String) = {
+  protected var mum = false
+  protected def echo(msg: String) = if (!mum) {
     out println msg
     out.flush()
   }
+  // turn off intp reporter and our echo
+  def mumly[A](op: => A): A =
+    if (isReplDebug) op
+    else intp beQuietDuring {
+      val saved = mum
+      mum = true
+      try op finally mum = saved
+    }
 
   /** Search the history */
   def searchHistory(_cmdline: String) {
@@ -407,12 +415,13 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
    *  command() for each line of input, and stops when
    *  command() returns false.
    */
-  @tailrec final def loop(): LineResult = {
+  final def loop(): LineResult = loop(readOneLine())
+
+  @tailrec final def loop(line: String): LineResult = {
     import LineResults._
-    readOneLine() match {
-      case null => EOF
-      case line => if (try processLine(line) catch crashRecovery) loop() else ERR
-    }
+    if (line == null) EOF
+    else if (try processLine(line) catch crashRecovery) loop(readOneLine())
+    else ERR
   }
 
   /** interpret all lines from a specified file */
@@ -481,11 +490,7 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
   def editCommand(what: String): Result = editCommand(what, Properties.envOrNone("EDITOR"))
 
   def editCommand(what: String, editor: Option[String]): Result = {
-    def diagnose(code: String) = {
-      echo("The edited code is incomplete!\n")
-      val errless = intp compileSources new BatchSourceFile("<pastie>", s"object pastel {\n$code\n}")
-      if (errless) echo("The compiler reports no errors.")
-    }
+    def diagnose(code: String): Unit = paste.incomplete("The edited code is incomplete!\n", "<edited>", code)
 
     def edit(text: String): Result = editor match {
       case Some(ed) =>
@@ -543,7 +548,6 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
             case i  => val n = s.take(i).toInt ; (n, s.drop(i+1).toInt - n)
           }
         }
-      import scala.collection.JavaConverters._
       val index = (start - 1) max 0
       val text = history.asStrings(index, index + len) mkString "\n"
       edit(text)
@@ -565,9 +569,9 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     }
   }
 
-  def withFile[A](filename: String)(action: File => A): Option[A] = {
+  def withFile[A](filename: String)(action: File => A): Option[A] = intp.withLabel(filename) {
     val res = Some(File(filename)) filter (_.exists) map action
-    if (res.isEmpty) echo("That file does not exist")  // courtesy side-effect
+    if (res.isEmpty) intp.reporter.warning(NoPosition, s"File `$filename' does not exist.")  // courtesy side-effect
     res
   }
 
@@ -590,7 +594,7 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     else File(filename).printlnAll(replayCommands: _*)
   )
 
-  @deprecated("Use reset, replay or require to update class path", since = "2.11")
+  @deprecated("use reset, replay or require to update class path", since = "2.11.0")
   def addClasspath(arg: String): Unit = {
     val f = File(arg).normalize
     if (f.exists) {
@@ -635,10 +639,10 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
       }
     }
     def alreadyDefined(clsName: String) = intp.classLoader.tryToLoadClass(clsName).isDefined
-    val exists = entries.filter(_.hasExtension("class")).map(classNameOf).exists(alreadyDefined)
+    val existingClass = entries.filter(_.hasExtension("class")).map(classNameOf).find(alreadyDefined)
 
     if (!f.exists) echo(s"The path '$f' doesn't seem to exist.")
-    else if (exists) echo(s"The path '$f' cannot be loaded, because existing classpath entries conflict.") // TODO tell me which one
+    else if (existingClass.nonEmpty) echo(s"The path '$f' cannot be loaded, it contains a classfile that already exists on the classpath: ${existingClass.get}")
     else {
       addedClasspath = ClassPath.join(addedClasspath, f.path)
       intp.addUrlsToClassPath(f.toURI.toURL)
@@ -693,25 +697,39 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     Iterator continually in.readLine("") takeWhile (x => x != null && cond(x))
   }
 
+  /* :paste -raw file
+   * or
+   * :paste < EOF
+   *   your code
+   * EOF
+   * :paste <~ EOF
+   *   ~your code
+   * EOF
+   */
   def pasteCommand(arg: String): Result = {
     var shouldReplay: Option[String] = None
+    var label = "<pastie>"
     def result = Result(keepRunning = true, shouldReplay)
-    val (raw, file) =
-      if (arg.isEmpty) (false, None)
+    val (raw, file, margin) =
+      if (arg.isEmpty) (false, None, None)
       else {
-        val r = """(-raw)?(\s+)?([^\-]\S*)?""".r
-        arg match {
-          case r(flag, sep, name) =>
-            if (flag != null && name != null && sep == null)
-              echo(s"""I assume you mean "$flag $name"?""")
-            (flag != null, Option(name))
-          case _ =>
-            echo("usage: :paste -raw file")
-            return result
+        def maybeRaw(ss: List[String]) = if (ss.nonEmpty && ss.head == "-raw") (true, ss.tail) else (false, ss)
+        def maybeHere(ss: List[String]) =
+          if (ss.nonEmpty && ss.head.startsWith("<")) (ss.head.dropWhile(_ == '<'), ss.tail)
+          else (null, ss)
+
+        val (raw0, ss0) = maybeRaw(words(arg))
+        val (margin0, ss1) = maybeHere(ss0)
+        val file0 = ss1 match {
+          case Nil      => null
+          case x :: Nil => x
+          case _        => echo("usage: :paste [-raw] file | < EOF") ; return result
         }
+        (raw0, Option(file0), Option(margin0))
       }
-    val code = file match {
-      case Some(name) =>
+    val code = (file, margin) match {
+      case (Some(name), None) =>
+        label = name
         withFile(name) { f =>
           shouldReplay = Some(s":paste $arg")
           val s = f.slurp.trim
@@ -719,29 +737,28 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
           else echo(s"Pasting file $f...")
           s
         } getOrElse ""
-      case None =>
-        echo("// Entering paste mode (ctrl-D to finish)\n")
-        val text = (readWhile(_ => true) mkString "\n").trim
+      case (eof, _) =>
+        echo(s"// Entering paste mode (${ eof getOrElse "ctrl-D" } to finish)\n")
+        val delimiter = eof orElse replProps.pasteDelimiter.option
+        val input = readWhile(s => delimiter.isEmpty || delimiter.get != s) mkString "\n"
+        val text = (
+          margin filter (_.nonEmpty) map {
+            case "-" => input.lines map (_.trim) mkString "\n"
+            case m   => input stripMargin m.head   // ignore excess chars in "<<||"
+          } getOrElse input
+        ).trim
         if (text.isEmpty) echo("\n// Nothing pasted, nothing gained.\n")
         else echo("\n// Exiting paste mode, now interpreting.\n")
         text
     }
     def interpretCode() = {
-      val res = intp interpret code
-      // if input is incomplete, let the compiler try to say why
-      if (res == IR.Incomplete) {
-        echo("The pasted code is incomplete!\n")
-        // Remembrance of Things Pasted in an object
-        val errless = intp compileSources new BatchSourceFile("<pastie>", s"object pastel {\n$code\n}")
-        if (errless) echo("...but compilation found no error? Good luck with that.")
-      }
+      if (intp.withLabel(label)(intp interpret code) == IR.Incomplete)
+        paste.incomplete("The pasted code is incomplete!\n", label, code)
     }
-    def compileCode() = {
-      val errless = intp compileSources new BatchSourceFile("<pastie>", code)
-      if (!errless) echo("There were compilation errors!")
-    }
+    def compileCode() = paste.compilePaste(label = label, code = code)
+
     if (code.nonEmpty) {
-      if (raw) compileCode() else interpretCode()
+      if (raw || paste.isPackaged(code)) compileCode() else interpretCode()
     }
     result
   }
@@ -749,6 +766,27 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
   private object paste extends Pasted(prompt) {
     def interpret(line: String) = intp interpret line
     def echo(message: String)   = ILoop.this echo message
+
+    val leadingElement = raw"(?s)\s*(package\s|/)".r
+    def isPackaged(code: String): Boolean = {
+      leadingElement.findPrefixMatchOf(code)
+        .map(m => if (m.group(1) == "/") intp.parse.packaged(code) else true)
+        .getOrElse(false)
+    }
+
+    // if input is incomplete, wrap and compile for diagnostics.
+    def incomplete(message: String, label: String, code: String): Boolean = {
+      echo(message)
+      val errless = intp.compileSources(new BatchSourceFile(label, s"object pastel {\n$code\n}"))
+      if (errless) echo("No error found in incomplete source.")
+      errless
+    }
+
+    def compilePaste(label: String, code: String): Boolean = {
+      val errless = intp.compileSources(new BatchSourceFile(label, code))
+      if (!errless) echo("There were compilation errors!")
+      errless
+    }
   }
 
   private object invocation {
@@ -809,19 +847,7 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     }
   }
 
-  // runs :load `file` on any files passed via -i
-  def loadFiles(settings: Settings) = settings match {
-    case settings: GenericRunnerSettings =>
-      for (filename <- settings.loadfiles.value) {
-        val cmd = ":load " + filename
-        command(cmd)
-        addReplay(cmd)
-        echo("")
-      }
-    case _ =>
-  }
-
-  /** Tries to create a JLineReader, falling back to SimpleReader,
+  /** Tries to create a jline.InteractiveReader, falling back to SimpleReader,
    *  unless settings or properties are such that it should start with SimpleReader.
    *  The constructor of the InteractiveReader must take a Completion strategy,
    *  supplied as a `() => Completion`; the Completion object provides a concrete Completer.
@@ -851,7 +877,7 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
 
       if (settings.debug) {
         val readerDiags = (readerClasses, readers).zipped map {
-          case (cls, Failure(e)) => s"  - $cls --> " + e.getStackTrace.mkString(e.toString+"\n\t", "\n\t","\n")
+          case (cls, Failure(e)) => s"  - $cls --> \n\t" + scala.tools.nsc.util.stackTraceString(e) + "\n"
           case (cls, Success(_)) => s"  - $cls OK"
         }
         Console.println(s"All InteractiveReaders tried: ${readerDiags.mkString("\n","\n","\n")}")
@@ -860,52 +886,121 @@ class ILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
     }
   }
 
-  private def loopPostInit() {
-    // Bind intp somewhere out of the regular namespace where
-    // we can get at it in generated code.
-    intp.quietBind(NamedParam[IMain]("$intp", intp)(tagOfIMain, classTag[IMain]))
-    // Auto-run code via some setting.
-    ( replProps.replAutorunCode.option
-        flatMap (f => io.File(f).safeSlurp())
-        foreach (intp quietRun _)
-    )
-    // classloader and power mode setup
-    intp.setContextClassLoader()
-    if (isReplPower) {
-      replProps.power setValue true
-      unleashAndSetPhase()
-      asyncMessage(power.banner)
-    }
-    // SI-7418 Now, and only now, can we enable TAB completion.
-    in.postInit()
-  }
-
-  // start an interpreter with the given settings
+  /** Start an interpreter with the given settings.
+   *  @return true if successful
+   */
   def process(settings: Settings): Boolean = savingContextLoader {
+    def newReader = in0.fold(chooseReader(settings))(r => SimpleReader(r, out, interactive = true))
+
+    /** Reader to use before interpreter is online. */
+    def preLoop = {
+      val sr = SplashReader(newReader) { r =>
+        in = r
+        in.postInit()
+      }
+      in = sr
+      SplashLoop(sr, prompt)
+    }
+
+    /* Actions to cram in parallel while collecting first user input at prompt.
+     * Run with output muted both from ILoop and from the intp reporter.
+     */
+    def loopPostInit(): Unit = mumly {
+      // Bind intp somewhere out of the regular namespace where
+      // we can get at it in generated code.
+      intp.quietBind(NamedParam[IMain]("$intp", intp)(tagOfIMain, classTag[IMain]))
+
+      // Auto-run code via some setting.
+      ( replProps.replAutorunCode.option
+          flatMap (f => File(f).safeSlurp())
+          foreach (intp quietRun _)
+      )
+      // power mode setup
+      if (isReplPower) {
+        replProps.power setValue true
+        unleashAndSetPhase()
+        asyncMessage(power.banner)
+      }
+      loadInitFiles()
+      // SI-7418 Now, and only now, can we enable TAB completion.
+      in.postInit()
+    }
+    def loadInitFiles(): Unit = settings match {
+      case settings: GenericRunnerSettings =>
+        for (f <- settings.loadfiles.value) {
+          loadCommand(f)
+          addReplay(s":load $f")
+        }
+        for (f <- settings.pastefiles.value) {
+          pasteCommand(f)
+          addReplay(s":paste $f")
+        }
+      case _ =>
+    }
+    // wait until after startup to enable noisy settings
+    def withSuppressedSettings[A](body: => A): A = {
+      val ss = this.settings
+      import ss._
+      val noisy = List(Xprint, Ytyperdebug)
+      val noisesome = noisy.exists(!_.isDefault)
+      val current = (Xprint.value, Ytyperdebug.value)
+      if (isReplDebug || !noisesome) body
+      else {
+        this.settings.Xprint.value = List.empty
+        this.settings.Ytyperdebug.value = false
+        try body
+        finally {
+          Xprint.value       = current._1
+          Ytyperdebug.value  = current._2
+          intp.global.printTypings = current._2
+        }
+      }
+    }
+    def startup(): String = withSuppressedSettings {
+      // starting
+      printWelcome()
+
+      // let them start typing
+      val splash = preLoop
+      splash.start()
+
+      // while we go fire up the REPL
+      try {
+        // don't allow ancient sbt to hijack the reader
+        savingReader {
+          createInterpreter()
+        }
+        intp.initializeSynchronous()
+        globalFuture = Future successful true
+        if (intp.reporter.hasErrors) {
+          echo("Interpreter encountered errors during initialization!")
+          null
+        } else {
+          loopPostInit()
+          val line = splash.line           // what they typed in while they were waiting
+          if (line == null) {              // they ^D
+            try out print Properties.shellInterruptedString
+            finally closeInterpreter()
+          }
+          line
+        }
+      } finally splash.stop()
+    }
     this.settings = settings
-    createInterpreter()
-
-    // sets in to some kind of reader depending on environmental cues
-    in = in0.fold(chooseReader(settings))(r => SimpleReader(r, out, interactive = true))
-    globalFuture = future {
-      intp.initializeSynchronous()
-      loopPostInit()
-      !intp.reporter.hasErrors
+    startup() match {
+      case null    => false
+      case line    =>
+        try loop(line) match {
+          case LineResults.EOF => out print Properties.shellInterruptedString
+          case _               =>
+        }
+        catch AbstractOrMissingHandler()
+        finally closeInterpreter()
+        true
     }
-    loadFiles(settings)
-    printWelcome()
-
-    try loop() match {
-      case LineResults.EOF => out print Properties.shellInterruptedString
-      case _               =>
-    }
-    catch AbstractOrMissingHandler()
-    finally closeInterpreter()
-
-    true
   }
 
-  @deprecated("Use `process` instead", "2.9.0")
+  @deprecated("use `process` instead", "2.9.0")
   def main(settings: Settings): Unit = process(settings) //used by sbt
 }
 

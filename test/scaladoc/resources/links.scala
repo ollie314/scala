@@ -1,6 +1,6 @@
 // that would be:
 // SI-5079 "Scaladoc can't link to an object (only a class or trait)"
-// SI-4497 "Links in ScalaDoc - Spec and implementation unsufficient"
+// SI-4497 "Links in Scaladoc - Spec and implementation unsufficient"
 // SI-4224 "Wiki-links should support method targets"
 // SI-3695 "support non-fully-qualified type links in scaladoc comments"
 // SI-6487 "Scaladoc can't link to inner classes"
@@ -38,7 +38,7 @@ package scala.test.scaladoc.links {
 
   /**
    *  Links to the trait:
-   *  - [[scala.test.scaladoc.links.Target$                object Test]]
+   *  - [[scala.test.scaladoc.links.Target$                object Target]]
    *  - [[scala.test                                       package scala.test]]
    *  - [[scala.test.scaladoc.links.Target!.T              trait Target -> type T]]
    *  - [[test.scaladoc.links.Target!.S                    trait Target -> type S]]
@@ -51,7 +51,7 @@ package scala.test.scaladoc.links {
    *  - [[Target$.foo(z:Str*                               object Target -> def foo]]
    *  - [[Target$.bar                                      object Target -> def bar]]
    *  - [[[[Target$.foo[A[_[_]]]*                          trait Target -> def foo with 3 nested tparams]]]] (should exercise nested parens)
-   *  - [[Target.onlyInObject                              object Target -> def foo]] (should find the object)
+   *  - [[Target.onlyInObject                              object Target -> onlyInObject]]
    *  - [[Target$.C                                        object Target -> class C]] (should link directly to C, not as a member)
    *  - [[Target!.C                                        trait Target -> class C]] (should link directly to C, not as a member)
    *  - [[Target$.baz(c:scala\.test\.scaladoc\.links\.C)*  object Target -> def baz]] (should use dots in prefix)

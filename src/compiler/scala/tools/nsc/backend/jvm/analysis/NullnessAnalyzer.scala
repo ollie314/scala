@@ -5,8 +5,8 @@ package analysis
 import java.util
 
 import scala.annotation.switch
-import scala.tools.asm.{Type, Opcodes}
-import scala.tools.asm.tree.{MethodInsnNode, LdcInsnNode, AbstractInsnNode}
+import scala.tools.asm.{Opcodes, Type}
+import scala.tools.asm.tree.{AbstractInsnNode, LdcInsnNode, MethodInsnNode, MethodNode}
 import scala.tools.asm.tree.analysis._
 import scala.tools.nsc.backend.jvm.opt.BytecodeUtils
 import BytecodeUtils._
@@ -63,7 +63,7 @@ object NullnessValue {
   def unknown(insn: AbstractInsnNode) = if (BytecodeUtils.instructionResultSize(insn) == 2) UnknownValue2 else UnknownValue1
 }
 
-final class NullnessInterpreter extends Interpreter[NullnessValue](Opcodes.ASM5) {
+final class NullnessInterpreter(bTypes: BTypes, method: MethodNode) extends Interpreter[NullnessValue](Opcodes.ASM5) {
   def newValue(tp: Type): NullnessValue = {
     // ASM loves giving semantics to null. The behavior here is the same as in SourceInterpreter,
     // which is provided by the framework.
@@ -80,7 +80,13 @@ final class NullnessInterpreter extends Interpreter[NullnessValue](Opcodes.ASM5)
 
   override def newParameterValue(isInstanceMethod: Boolean, local: Int, tp: Type): NullnessValue = {
     // For instance methods, the `this` parameter is known to be not null.
-    if (isInstanceMethod && local == 0) NotNullValue
+    val isThis = local == 0 && (isInstanceMethod || {
+      method.parameters != null && !method.parameters.isEmpty && {
+        val p = method.parameters.get(0)
+        (p.access & Opcodes.ACC_SYNTHETIC) != 0 && p.name == "$this"
+      }
+    })
+    if (isThis) NotNullValue
     else super.newParameterValue(isInstanceMethod, local, tp)
   }
 
@@ -113,13 +119,13 @@ final class NullnessInterpreter extends Interpreter[NullnessValue](Opcodes.ASM5)
 
   def ternaryOperation(insn: AbstractInsnNode, value1: NullnessValue, value2: NullnessValue, value3: NullnessValue): NullnessValue = UnknownValue1
 
-  def naryOperation(insn: AbstractInsnNode, values: util.List[_ <: NullnessValue]): NullnessValue = (insn.getOpcode: @switch) match {
-    case Opcodes.MULTIANEWARRAY =>
+  def naryOperation(insn: AbstractInsnNode, values: util.List[_ <: NullnessValue]): NullnessValue = insn match {
+    case mi: MethodInsnNode if bTypes.backendUtils.isNonNullMethodInvocation(mi) =>
       NotNullValue
 
     case _ =>
-      // TODO: use a list of methods that are known to return non-null values
-      NullnessValue.unknown(insn)
+      if (insn.getOpcode == Opcodes.MULTIANEWARRAY) NotNullValue
+      else NullnessValue.unknown(insn)
   }
 
   def returnOperation(insn: AbstractInsnNode, value: NullnessValue, expected: NullnessValue): Unit = ()
@@ -197,7 +203,7 @@ class NullnessFrame(nLocals: Int, nStack: Int) extends AliasingFrame[NullnessVal
  * This class is required to override the `newFrame` methods, which makes makes sure the analyzer
  * uses NullnessFrames.
  */
-class NullnessAnalyzer extends Analyzer[NullnessValue](new NullnessInterpreter) {
+class NullnessAnalyzer(bTypes: BTypes, method: MethodNode) extends Analyzer[NullnessValue](new NullnessInterpreter(bTypes, method)) {
   override def newFrame(nLocals: Int, nStack: Int): NullnessFrame = new NullnessFrame(nLocals, nStack)
   override def newFrame(src: Frame[_ <: NullnessValue]): NullnessFrame = new NullnessFrame(src)
 }

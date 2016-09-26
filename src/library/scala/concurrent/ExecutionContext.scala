@@ -11,7 +11,6 @@ package scala.concurrent
 
 import java.util.concurrent.{ ExecutorService, Executor }
 import scala.annotation.implicitNotFound
-import scala.util.Try
 
 /**
  * An `ExecutionContext` can execute program logic asynchronously,
@@ -75,7 +74,7 @@ trait ExecutionContext {
   /** Prepares for the execution of a task. Returns the prepared
      *  execution context. The recommended implementation of
      *  `prepare` is to return `this`.
-     * 
+     *
      *  This method should no longer be overridden or called. It was
      *  originally expected that `prepare` would be called by
      *  all libraries that consume ExecutionContexts, in order to
@@ -88,7 +87,7 @@ trait ExecutionContext {
      *  constructed, so that it doesn't need any additional
      *  preparation later.
      */
-  @deprecated("Preparation of ExecutionContexts will be removed.", "2.12")
+  @deprecated("preparation of ExecutionContexts will be removed", "2.12.0")
   def prepare(): ExecutionContext = this
 }
 

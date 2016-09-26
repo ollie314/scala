@@ -12,7 +12,6 @@ package immutable
 
 import generic._
 import mutable.{ Builder, ListBuffer }
-import scala.annotation.tailrec
 
 /** `Queue` objects implement data structures that allow to
  *  insert and retrieve elements in a first-in-first-out (FIFO) manner.
@@ -38,8 +37,7 @@ import scala.annotation.tailrec
  */
 
 @SerialVersionUID(-7622936493364270175L)
-@deprecatedInheritance("The implementation details of immutable queues make inheriting from them unwise.", "2.11.0")
-class Queue[+A] protected(protected val in: List[A], protected val out: List[A])
+sealed class Queue[+A] protected(protected val in: List[A], protected val out: List[A])
          extends AbstractSeq[A]
             with LinearSeq[A]
             with GenericTraversableTemplate[A, Queue]
@@ -85,6 +83,14 @@ class Queue[+A] protected(protected val in: List[A], protected val out: List[A])
     if (out.nonEmpty) new Queue(in, out.tail)
     else if (in.nonEmpty) new Queue(Nil, in.reverse.tail)
     else throw new NoSuchElementException("tail on empty queue")
+
+  /* This is made to avoid inefficient implementation of iterator. */
+  override def forall(p: A => Boolean): Boolean =
+    in.forall(p) && out.forall(p)
+
+  /* This is made to avoid inefficient implementation of iterator. */
+  override def exists(p: A => Boolean): Boolean =
+    in.exists(p) || out.exists(p)
 
   /** Returns the length of the queue.
    */

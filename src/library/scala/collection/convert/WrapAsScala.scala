@@ -13,8 +13,26 @@ package convert
 import java.{ lang => jl, util => ju }, java.util.{ concurrent => juc }
 import scala.language.implicitConversions
 
-trait WrapAsScala {
+@deprecated("use JavaConverters or consider ToScalaImplicits", since="2.12.0")
+trait WrapAsScala extends LowPriorityWrapAsScala {
+  // provide higher-priority implicits with names that don't exist in JavaConverters for the case
+  // when importing both JavaConverters._ and JavaConversions._. otherwise implicit conversions
+  // would not apply, see https://github.com/scala/scala/pull/5109#issuecomment-212417789
+  implicit def `deprecated asScalaIterator`[A](it: ju.Iterator[A]): Iterator[A] = asScalaIterator(it)
+  implicit def `deprecated enumerationAsScalaIterator`[A](i: ju.Enumeration[A]): Iterator[A] = enumerationAsScalaIterator(i)
+  implicit def `deprecated iterableAsScalaIterable`[A](i: jl.Iterable[A]): Iterable[A] = iterableAsScalaIterable(i)
+  implicit def `deprecated collectionAsScalaIterable`[A](i: ju.Collection[A]): Iterable[A] = collectionAsScalaIterable(i)
+  implicit def `deprecated asScalaBuffer`[A](l: ju.List[A]): mutable.Buffer[A] = asScalaBuffer(l)
+  implicit def `deprecated asScalaSet`[A](s: ju.Set[A]): mutable.Set[A] = asScalaSet(s)
+  implicit def `deprecated mapAsScalaMap`[A, B](m: ju.Map[A, B]): mutable.Map[A, B] = mapAsScalaMap(m)
+  implicit def `deprecated mapAsScalaConcurrentMap`[A, B](m: juc.ConcurrentMap[A, B]): concurrent.Map[A, B] = mapAsScalaConcurrentMap(m)
+  implicit def `deprecated dictionaryAsScalaMap`[A, B](p: ju.Dictionary[A, B]): mutable.Map[A, B] = dictionaryAsScalaMap(p)
+  implicit def `deprecated propertiesAsScalaMap`(p: ju.Properties): mutable.Map[String, String] = propertiesAsScalaMap(p)
+}
+
+private[convert] trait LowPriorityWrapAsScala {
   import Wrappers._
+
   /**
    * Implicitly converts a Java `Iterator` to a Scala `Iterator`.
    *
@@ -139,13 +157,13 @@ trait WrapAsScala {
    * If the Java `Map` was previously obtained from an implicit or
    * explicit call of `mapAsScalaMap(scala.collection.mutable.Map)` then
    * the original Scala Map will be returned.
-   * 
+   *
    * If the wrapped map is synchronized (e.g. from `java.util.Collections.synchronizedMap`),
-   * it is your responsibility to wrap all 
+   * it is your responsibility to wrap all
    * non-atomic operations with `underlying.synchronized`.
    * This includes `get`, as `java.util.Map`'s API does not allow for an
    * atomic `get` when `null` values may be present.
-   * 
+   *
    * @param m The Map to be converted.
    * @return A Scala mutable Map view of the argument.
    */
@@ -170,20 +188,20 @@ trait WrapAsScala {
    */
   implicit def mapAsScalaConcurrentMap[A, B](m: juc.ConcurrentMap[A, B]): concurrent.Map[A, B] = m match {
     case null                             => null
-    case cmw: ConcurrentMapWrapper[A, B]  => cmw.underlying
+    case cmw: ConcurrentMapWrapper[_, _]  => cmw.underlying
     case _                                => new JConcurrentMapWrapper(m)
   }
 
   /**
    * Implicitly converts a Java `Dictionary` to a Scala mutable
-   * `Map[String, String]`.
+   * `Map`.
    *
-   * The returned Scala `Map[String, String]` is backed by the provided Java
+   * The returned Scala `Map` is backed by the provided Java
    * `Dictionary` and any side-effects of using it via the Scala interface
    * will be visible via the Java interface and vice versa.
    *
    * @param p The Dictionary to be converted.
-   * @return  A Scala mutable Map[String, String] view of the argument.
+   * @return  A Scala mutable Map view of the argument.
    */
   implicit def dictionaryAsScalaMap[A, B](p: ju.Dictionary[A, B]): mutable.Map[A, B] = p match {
     case null                       => null
@@ -207,4 +225,5 @@ trait WrapAsScala {
   }
 }
 
-object WrapAsScala extends WrapAsScala { }
+@deprecated("use JavaConverters or consider ImplicitConversionsToScala", since="2.12.0")
+object WrapAsScala extends WrapAsScala

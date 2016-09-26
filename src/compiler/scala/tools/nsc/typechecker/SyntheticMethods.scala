@@ -6,10 +6,12 @@
 package scala.tools.nsc
 package typechecker
 
-import scala.collection.{ mutable, immutable }
-import symtab.Flags._
-import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
+
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
+
+import symtab.Flags._
 
 /** Synthetic method implementations for case classes and case objects.
  *
@@ -91,10 +93,13 @@ trait SyntheticMethods extends ast.TreeDSL {
     def forwardToRuntime(method: Symbol): Tree =
       forwardMethod(method, getMember(ScalaRunTimeModule, (method.name prepend "_")))(mkThis :: _)
 
-    def callStaticsMethod(name: String)(args: Tree*): Tree = {
-      val method = termMember(RuntimeStaticsModule, name)
+    def callStaticsMethodName(name: TermName)(args: Tree*): Tree = {
+      val method = RuntimeStaticsModule.info.member(name)
       Apply(gen.mkAttributedRef(method), args.toList)
     }
+
+    def callStaticsMethod(name: String)(args: Tree*): Tree =
+      callStaticsMethodName(newTermName(name))(args: _*)
 
     // Any concrete member, including private
     def hasConcreteImpl(name: Name) =
@@ -243,10 +248,10 @@ trait SyntheticMethods extends ast.TreeDSL {
         case BooleanClass                       => If(Ident(sym), Literal(Constant(1231)), Literal(Constant(1237)))
         case IntClass                           => Ident(sym)
         case ShortClass | ByteClass | CharClass => Select(Ident(sym), nme.toInt)
-        case LongClass                          => callStaticsMethod("longHash")(Ident(sym))
-        case DoubleClass                        => callStaticsMethod("doubleHash")(Ident(sym))
-        case FloatClass                         => callStaticsMethod("floatHash")(Ident(sym))
-        case _                                  => callStaticsMethod("anyHash")(Ident(sym))
+        case LongClass                          => callStaticsMethodName(nme.longHash)(Ident(sym))
+        case DoubleClass                        => callStaticsMethodName(nme.doubleHash)(Ident(sym))
+        case FloatClass                         => callStaticsMethodName(nme.floatHash)(Ident(sym))
+        case _                                  => callStaticsMethodName(nme.anyHash)(Ident(sym))
       }
     }
 
