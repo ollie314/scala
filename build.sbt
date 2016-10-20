@@ -109,6 +109,11 @@ lazy val commonSettings = clearSourceAndResourceDirectories ++ publishSettings +
     }
   },
   scalaVersion := (scalaVersion in bootstrap).value,
+  // As of sbt 0.13.12 (sbt/sbt#2634) sbt endeavours to align both scalaOrganization and scalaVersion
+  // in the Scala artefacts, for example scala-library and scala-compiler.
+  // This doesn't work in the scala/scala build because the version of scala-library and the scalaVersion of
+  // scala-library are correct to be different. So disable overriding.
+  ivyScala ~= (_ map (_ copy (overrideScalaVersion = false))),
   // we always assume that Java classes are standalone and do not have any dependency
   // on Scala classes
   compileOrder := CompileOrder.JavaThenScala,
@@ -632,7 +637,7 @@ lazy val test = project
     javaOptions in IntegrationTest += "-Xmx2G",
     testFrameworks += new TestFramework("scala.tools.partest.sbt.Framework"),
     testFrameworks -= new TestFramework("org.scalacheck.ScalaCheckFramework"),
-    testOptions in IntegrationTest += Tests.Argument("-Dpartest.java_opts=-Xmx1024M -Xms64M -XX:MaxPermSize=128M"),
+    testOptions in IntegrationTest += Tests.Argument("-Dpartest.java_opts=-Xmx1024M -Xms64M"),
     testOptions in IntegrationTest += Tests.Argument("-Dpartest.scalac_opts=" + (scalacOptions in Compile).value.mkString(" ")),
     testOptions in IntegrationTest += Tests.Setup { () =>
       val cp = (dependencyClasspath in Test).value
