@@ -135,7 +135,7 @@ To perform a bootstrap using sbt
   - then a separate invocation of sbt (using the previously built version as `starr`)
     is used to build / publish the actual build.
 
-Assume the current `starr` version is `2.12.0-M4` (defined in
+Assume the current `starr` version is `2.12.0` (defined in
 [versions.properties](versions.properties)) and the current version is `2.12.0-SNAPSHOT`
 (defined in [build.sbt](build.sbt)). To perform a local bootstrap:
   - Run `publishLocal` (you may want to specify a custom version suffix and skip
@@ -183,7 +183,7 @@ You may also want to check out the following resources:
 
 # Scala CI
 
-Once you submit a PR your commits will are automatically tested by the Scala CI.
+Once you submit a PR your commits will be automatically tested by the Scala CI.
 
 If you see a spurious build failure, you can post `/rebuild` as a PR comment.
 The [scabot README](https://github.com/scala/scabot) lists all available commands.

@@ -39,6 +39,7 @@ val scalaSwingDep                = scalaDep("org.scala-lang.modules", "scala-swi
 val scalaXmlDep                  = scalaDep("org.scala-lang.modules", "scala-xml")
 val scalaParserCombinatorsDep    = scalaDep("org.scala-lang.modules", "scala-parser-combinators")
 val partestDep                   = scalaDep("org.scala-lang.modules", "scala-partest",              versionProp = "partest")
+val scalacheckDep                = scalaDep("org.scalacheck",         "scalacheck",                 scope = "it")
 
 // Non-Scala dependencies:
 val junitDep          = "junit"                  % "junit"           % "4.11"
@@ -86,7 +87,7 @@ lazy val publishSettings : Seq[Setting[_]] = Seq(
 // should not be set directly. It is the same as the Maven version and derived automatically from `baseVersion` and
 // `baseVersionSuffix`.
 globalVersionSettings
-baseVersion in Global := "2.12.0"
+baseVersion in Global := "2.12.1"
 baseVersionSuffix in Global := "SNAPSHOT"
 mimaReferenceVersion in Global := Some("2.12.0-RC1")
 
@@ -332,6 +333,8 @@ lazy val library = configureAsSubproject(project)
         "-doc-root-content", (sourceDirectory in Compile).value + "/rootdoc.txt"
       )
     },
+    // macros in library+reflect are hard-wired to implementations with `FastTrack`.
+    incOptions := incOptions.value.withRecompileOnMacroDef(false),
     includeFilter in unmanagedResources in Compile := "*.tmpl" | "*.xml" | "*.js" | "*.css" | "rootdoc.txt",
     // Include *.txt files in source JAR:
     mappings in Compile in packageSrc ++= {
@@ -359,6 +362,8 @@ lazy val reflect = configureAsSubproject(project)
   .settings(
     name := "scala-reflect",
     description := "Scala Reflection Library",
+    // macros in library+reflect are hard-wired to implementations with `FastTrack`.
+    incOptions := incOptions.value.withRecompileOnMacroDef(false),
     Osgi.bundleName := "Scala Reflect",
     scalacOptions in Compile in doc ++= Seq(
       "-skip-packages", "scala.reflect.macros.internal:scala.reflect.internal:scala.reflect.io"
@@ -549,7 +554,7 @@ lazy val junit = project.in(file("test") / "junit")
     javaOptions in Test += "-Xss1M",
     libraryDependencies ++= Seq(junitDep, junitInterfaceDep, jolDep),
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-a", "-v"),
-    testFrameworks -= new TestFramework("org.scalacheck.ScalaCheckFramework"),
+    // testFrameworks -= new TestFramework("org.scalacheck.ScalaCheckFramework"),
     unmanagedSourceDirectories in Test := List(baseDirectory.value)
   )
 
@@ -628,7 +633,7 @@ lazy val test = project
   .settings(disablePublishing: _*)
   .settings(Defaults.itSettings: _*)
   .settings(
-    libraryDependencies ++= Seq(asmDep, partestDep, scalaXmlDep),
+    libraryDependencies ++= Seq(asmDep, partestDep, scalaXmlDep, scalacheckDep),
     libraryDependencies ++= {
       // Resolve the JARs for all test/files/lib/*.jar.desired.sha1 files through Ivy
       val baseDir = (baseDirectory in ThisBuild).value
@@ -645,7 +650,7 @@ lazy val test = project
     fork in IntegrationTest := true,
     javaOptions in IntegrationTest += "-Xmx2G",
     testFrameworks += new TestFramework("scala.tools.partest.sbt.Framework"),
-    testFrameworks -= new TestFramework("org.scalacheck.ScalaCheckFramework"),
+    // testFrameworks -= new TestFramework("org.scalacheck.ScalaCheckFramework"),
     testOptions in IntegrationTest += Tests.Argument("-Dpartest.java_opts=-Xmx1024M -Xms64M"),
     testOptions in IntegrationTest += Tests.Argument("-Dpartest.scalac_opts=" + (scalacOptions in Compile).value.mkString(" ")),
     testOptions in IntegrationTest += Tests.Setup { () =>
